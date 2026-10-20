@@ -915,7 +915,7 @@
         <p style="margin:6px 0">${isIOS ? t('install_ios') : t('install_android')}</p>
         <p style="margin:6px 0" class="muted">${isIOS ? t('install_android') : t('install_ios')}</p>
       </div>
-      <p class="center muted" style="font-size:13px">${t('version')} 1.2</p>`;
+      <p class="center muted" style="font-size:13px">${t('version')} 1.3</p>`;
 
     $('#divSettings', v).onclick = () => divisionsModal();
     $('#saveSch', v).onclick = () => {
