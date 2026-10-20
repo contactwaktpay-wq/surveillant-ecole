@@ -168,3 +168,7 @@ textarea { min-height: 80px; resize: vertical; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .chips.wrap .chip { padding: 6px 11px; font-size: 13.5px; }
 [dir="rtl"] .list .muted { display: inline-block; transform: scaleX(-1); }
+
+/* Masque le badge « Powered by Netlify » injecté par Netlify (il couvrait la barre d'onglets).
+   La solution définitive : Netlify → Project configuration → General → Powered by Netlify badge → Off */
+#nl-badge-frame, iframe[src*="/.netlify/"] { display: none !important; }

@@ -1,5 +1,5 @@
 // Service worker : permet à l'application de fonctionner sans connexion internet.
-const CACHE = 'surveillant-v3';
+const CACHE = 'surveillant-v4';
 const ASSETS = [
   './',
   './index.html',
