@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Surveillant – École</title>
+  <meta name="description" content="Outil simple pour le surveillant d'une école primaire : appel, retards, incidents, rapport du jour." />
+  <meta name="theme-color" content="#00854a" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Surveillant" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <img src="icons/icon-192.png" alt="" class="logo" />
+      <div class="titles">
+        <h1 id="appTitle">Surveillant</h1>
+        <small id="schoolName"></small>
+      </div>
+      <button id="installBtn" class="install-btn" hidden></button>
+      <button id="langBtn" class="lang-btn" aria-label="Langue">ع</button>
+    </div>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="home" class="active"><span class="ico">🏠</span><span data-t="tab_home"></span></button>
+    <button data-tab="appel"><span class="ico">✅</span><span data-t="tab_appel"></span></button>
+    <button data-tab="incidents"><span class="ico">⚠️</span><span data-t="tab_incidents"></span></button>
+    <button data-tab="eleves"><span class="ico">👧🏾</span><span data-t="tab_eleves"></span></button>
+    <button data-tab="reglages"><span class="ico">⚙️</span><span data-t="tab_reglages"></span></button>
+  </nav>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div id="modalBody"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
