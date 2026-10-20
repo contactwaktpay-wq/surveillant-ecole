@@ -6,7 +6,8 @@ Fonctionne **hors ligne**, en **français et en arabe**. Les données restent su
 ## Fonctions
 - ✅ **Appel** par classe (Présent / Absent / Retard), bouton « Tous présents »
 - ⚠️ **Incidents** : bagarre, insolence, tenue, travail non fait… avec mesure prise
-- 👧🏾 **Élèves** : classes 1ère → 6ème AF, ajout rapide ou par liste, téléphone du parent (appel / WhatsApp)
+- 👧🏾 **Élèves** : classes 1ère → 6ème AF, téléphone du parent (appel / WhatsApp)
+- 📥 **Importer une liste d'élèves** : fichier Excel (.xlsx, .xls), CSV ou copier-coller. Colonnes reconnues : Nom, Prénom, Téléphone, Classe. Une feuille Excel par classe est aussi acceptée. Les doublons sont ignorés.
 - 🏠 **Tableau de bord** du jour + **rapport partageable sur WhatsApp**
 - 💾 Export CSV (Excel), sauvegarde / restauration
 

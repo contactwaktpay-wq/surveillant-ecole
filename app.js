@@ -45,7 +45,17 @@
       copied: 'Copié ✓', required: 'Champ obligatoire', name_required: 'Veuillez saisir un nom',
       welcome: "Bienvenue ! Commencez par saisir le nom de l'école dans Réglages, puis ajoutez les élèves de chaque classe.",
       default_classes: ['1ère AF', '2ème AF', '3ème AF', '4ème AF', '5ème AF', '6ème AF'],
-      version: 'Version'
+      version: 'Version',
+      import_list: '📥 Importer une liste', import_title: "Importer une liste d'élèves",
+      import_file: 'Depuis un fichier Excel ou CSV', choose_file: '📂 Choisir un fichier (Excel, CSV)',
+      import_file_help: "Colonnes reconnues : Nom (obligatoire), Prénom, Téléphone, Classe. Si le fichier a une feuille par classe, chaque feuille devient une classe.",
+      import_paste: 'Ou coller les noms', target_class: 'Classe de destination (si le fichier n\'indique pas la classe)',
+      analyze: 'Analyser', do_import: 'Importer', found: 'élève(s) trouvé(s)', dupes: 'doublon(s) ignoré(s)', new_classes: 'nouvelle(s) classe(s)',
+      nothing_found: 'Aucun nom trouvé. Vérifiez le fichier.', reading: 'Lecture du fichier…', template: '⬇️ Télécharger un modèle',
+      import_hint: "Astuce : vous pouvez importer toute l'école d'un coup avec une colonne « Classe ».",
+      all_exist: 'Ces élèves existent déjà dans l\'application.',
+      and_more: 'et',
+      others: 'autres'
     },
     ar: {
       app: 'المراقب',
@@ -84,7 +94,17 @@
       copied: 'تم النسخ ✓', required: 'حقل إجباري', name_required: 'يرجى إدخال الاسم',
       welcome: 'مرحباً! ابدأ بإدخال اسم المدرسة في الإعدادات، ثم أضف تلاميذ كل قسم.',
       default_classes: ['السنة الأولى', 'السنة الثانية', 'السنة الثالثة', 'السنة الرابعة', 'السنة الخامسة', 'السنة السادسة'],
-      version: 'الإصدار'
+      version: 'الإصدار',
+      import_list: '📥 استيراد قائمة', import_title: 'استيراد قائمة التلاميذ',
+      import_file: 'من ملف Excel أو CSV', choose_file: '📂 اختر ملفاً (Excel، CSV)',
+      import_file_help: 'الأعمدة المعروفة: الاسم (إجباري)، الهاتف، القسم. إذا كان الملف يحتوي على ورقة لكل قسم، تصبح كل ورقة قسماً.',
+      import_paste: 'أو الصق الأسماء', target_class: 'القسم المستهدف (إذا لم يحدد الملف القسم)',
+      analyze: 'تحليل', do_import: 'استيراد', found: 'تلميذ', dupes: 'مكرر تم تجاهله', new_classes: 'قسم جديد',
+      nothing_found: 'لم يتم العثور على أسماء. تحقق من الملف.', reading: 'جارٍ قراءة الملف…', template: '⬇️ تحميل نموذج',
+      import_hint: 'نصيحة: يمكنك استيراد كل المدرسة دفعة واحدة باستخدام عمود «القسم».',
+      all_exist: 'هؤلاء التلاميذ موجودون بالفعل في التطبيق.',
+      and_more: 'و',
+      others: 'آخرين'
     }
   };
   const STATUS_LABEL = { fr: { P: 'P', A: 'A', R: 'R' }, ar: { P: 'ح', A: 'غ', R: 'ت' } };
@@ -264,7 +284,7 @@
     const showWelcome = !db.students.length;
     v.innerHTML = `
       <p class="date-line">${esc(fmtDate(key))}</p>
-      ${showWelcome ? `<div class="hint">👋 ${esc(t('welcome'))}</div>` : ''}
+      ${showWelcome ? `<div class="hint">👋 ${esc(t('welcome'))}<button class="btn gold block mt" id="homeImport">${t('import_list')}</button></div>` : ''}
       <div class="stats">
         <div class="stat"><b>${s.total}</b><span>${t('students')}</span></div>
         <div class="stat"><b>${s.P}</b><span>${t('present')}</span></div>
@@ -288,6 +308,7 @@
     $$('[data-goto-class]', v).forEach((li) => li.addEventListener('click', () => {
       state.appelClass = li.dataset.gotoClass; state.appelDate = key; setTab('appel');
     }));
+    const hi = $('#homeImport', v); if (hi) hi.onclick = () => importModal(db.classes[0] && db.classes[0].id);
     $('#shareBtn', v).onclick = () => shareReport(key);
     $('#copyBtn', v).onclick = () => copyText(buildReport(key));
   }
@@ -448,7 +469,7 @@
       </div>
       <div class="card">
         <input type="search" id="search" placeholder="${t('search')}" value="${esc(state.search)}">
-        ${cid && !q ? `<div class="btn-row mt"><button class="btn small" id="addStudent">${t('add_student')}</button><button class="btn light small" id="bulkAdd">${t('bulk_add')}</button></div>` : ''}
+        ${!q ? `<div class="btn-row mt">${cid ? `<button class="btn small" id="addStudent">${t('add_student')}</button>` : ''}<button class="btn gold small" id="bulkAdd">${t('import_list')}</button></div>` : ''}
         <ul class="list mt" id="stuList">${listHtml(list, !!q)}</ul>
       </div>`;
 
@@ -470,7 +491,7 @@
     $('#addClass', v).onclick = () => classModal();
     const ec = $('#editClass', v); if (ec) ec.onclick = () => classModal(classById(cid));
     const as = $('#addStudent', v); if (as) as.onclick = () => studentModal(null, cid);
-    const ba = $('#bulkAdd', v); if (ba) ba.onclick = () => bulkModal(cid);
+    const ba = $('#bulkAdd', v); if (ba) ba.onclick = () => importModal(cid);
     function bindList() { $$('li[data-sid]', v).forEach((li) => (li.onclick = () => studentDetail(li.dataset.sid))); }
     bindList();
   }
@@ -529,18 +550,191 @@
     });
   }
 
-  function bulkModal(cid) {
-    openModal(`<h2>${t('bulk_add')} – ${esc(classById(cid).name)}</h2>
+  /* ---------- Import de liste (Excel / CSV / copier-coller) ---------- */
+  const norm = (x) => String(x == null ? '' : x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\u064B-\u0652\u0640]/g, '').trim();
+  function canonClass(name) {
+    const n = norm(name).replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+    const m = n.match(/^(\d)(ere|er|re|eme|em|e)?(af|annee|anneefondamentale)?$/);
+    return m ? m[1] + 'af' : n;
+  }
+  function findClassByName(name) {
+    const c = canonClass(name);
+    return db.classes.find((k) => canonClass(k.name) === c);
+  }
+  let xlsxPromise = null;
+  function loadXLSX() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxPromise) xlsxPromise = new Promise((res, rej) => {
+      const sc = document.createElement('script'); sc.src = 'lib/xlsx.full.min.js';
+      sc.onload = () => res(window.XLSX); sc.onerror = () => { xlsxPromise = null; rej(new Error('xlsx')); };
+      document.head.appendChild(sc);
+    });
+    return xlsxPromise;
+  }
+  function parseCSV(text) {
+    const first = text.split(/\r?\n/).find((l) => l.trim()) || '';
+    const cnt = (ch) => first.split(ch).length - 1;
+    const delim = [';', '\t', ','].sort((a, b) => cnt(b) - cnt(a))[0];
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === delim) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    row.push(cell); rows.push(row);
+    return rows;
+  }
+  const PHONE_RE = /^\+?[\d\s.\-\/]{8,}$/;
+  function headerRole(h) {
+    const n = norm(h);
+    if (!n) return null;
+    if (/parent|tuteur|pere|mere|ولي|الأب|الام|الأم/.test(n) && /tel|phone|portable|mobile|contact|هاتف/.test(n)) return 'phone';
+    if (/tel|phone|portable|mobile|contact|هاتف|جوال/.test(n)) return 'phone';
+    if (/parent|tuteur|pere|mere|ولي/.test(n)) return null;
+    if (/classe|class|niveau|قسم|القسم|الفصل|المستوى/.test(n)) return 'class';
+    if (/prenom|first|الاسم الأول/.test(n)) return 'first';
+    if (/nom|name|eleve|اسم|الاسم|تلميذ|التلميذ/.test(n)) return 'name';
+    return null;
+  }
+  // rows : tableau de lignes ; renvoie [{name, phone, className}]
+  function rowsToEntries(rows, sheetClass) {
+    rows = rows.map((r) => (r || []).map((c) => String(c == null ? '' : c).replace(/\s+/g, ' ').trim()));
+    let hIdx = -1, cols = {};
+    for (let i = 0; i < Math.min(rows.length, 8) && hIdx < 0; i++) {
+      const roles = {};
+      rows[i].forEach((c, j) => { const r = headerRole(c); if (r && roles[r] === undefined) roles[r] = j; });
+      if (roles.name !== undefined || roles.first !== undefined) { hIdx = i; cols = roles; }
+    }
+    const out = [];
+    rows.slice(hIdx + 1).forEach((r) => {
+      if (!r.some(Boolean)) return;
+      let name = '', phone = '', cls = '';
+      if (hIdx >= 0) {
+        const nm = cols.name !== undefined ? r[cols.name] || '' : '';
+        const fn = cols.first !== undefined ? r[cols.first] || '' : '';
+        name = [fn, nm].filter(Boolean).join(' ');
+        phone = cols.phone !== undefined ? r[cols.phone] || '' : '';
+        cls = cols.class !== undefined ? r[cols.class] || '' : '';
+      } else {
+        name = r.find((c) => c && /[A-Za-z\u00C0-\u024F\u0600-\u06FF]/.test(c) && !PHONE_RE.test(c)) || '';
+        phone = r.find((c) => c && PHONE_RE.test(c)) || '';
+      }
+      name = name.replace(/^\d+\s*[-.)]\s*/, '').trim(); // retire « 1. » / « 2- »
+      if (!name || !/[A-Za-z\u00C0-\u024F\u0600-\u06FF]/.test(name)) return;
+      out.push({ name, phone: phone.trim(), className: cls || sheetClass || '' });
+    });
+    return out;
+  }
+  async function readFileEntries(file) {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (ext === 'csv' || ext === 'txt') {
+      const buf = await file.arrayBuffer();
+      let text = new TextDecoder('utf-8').decode(buf);
+      if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
+      return rowsToEntries(parseCSV(text.replace(/^\uFEFF/, '')), '');
+    }
+    const XLSX = await loadXLSX();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const sheets = wb.SheetNames.map((n) => ({ n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }) }))
+      .filter((sh) => sh.rows.some((r) => r.some((c) => String(c).trim())));
+    const generic = (n) => /^(feuil|sheet|feuille|ورقة)\s*\d*$/i.test(n.trim());
+    const perSheet = sheets.length > 1;
+    return sheets.flatMap((sh) => rowsToEntries(sh.rows, perSheet && !generic(sh.n) ? sh.n : ''));
+  }
+  function planImport(entries, targetCid) {
+    const plan = [], newClasses = new Map(); let dupes = 0;
+    const seen = new Set(db.students.map((s) => s.classId + '|' + norm(s.name)));
+    entries.forEach((e) => {
+      let cid = targetCid, label = classById(targetCid) ? classById(targetCid).name : '';
+      if (e.className) {
+        const c = findClassByName(e.className);
+        if (c) { cid = c.id; label = c.name; }
+        else {
+          const key = canonClass(e.className);
+          if (!newClasses.has(key)) newClasses.set(key, { id: uid(), name: e.className });
+          cid = newClasses.get(key).id; label = e.className;
+        }
+      }
+      if (!cid) return;
+      const k = cid + '|' + norm(e.name);
+      if (seen.has(k)) { dupes++; return; }
+      seen.add(k);
+      plan.push({ name: e.name, phone: e.phone, classId: cid, label });
+    });
+    return { plan, newClasses: [...newClasses.values()], dupes };
+  }
+
+  function importModal(cid) {
+    if (!db.classes.length) { db.classes = I18N[db.lang].default_classes.map((n) => ({ id: uid(), name: n })); save(); }
+    if (!classById(cid)) cid = db.classes[0].id;
+    let entries = null;
+    openModal(`<h2>📥 ${t('import_title')}</h2>
+      <div class="card" style="box-shadow:none;border:1.5px solid var(--border)">
+        <h3 style="margin-top:0">${t('import_file')}</h3>
+        <button class="btn block" id="pickFile">${t('choose_file')}</button>
+        <input type="file" id="impFile" accept=".xlsx,.xls,.ods,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain" hidden>
+        <p class="legend">${t('import_file_help')}</p>
+        <button class="btn light small" id="tplBtn">${t('template')}</button>
+      </div>
+      <label>${t('import_paste')}</label>
+      <textarea id="bulk" style="min-height:120px" placeholder="Mohamed Ould Ahmed ; 22123456\nFatimetou Mint Sidi\nAminata Ba"></textarea>
       <p class="legend">${t('bulk_help')}</p>
-      <label>${t('names')}</label><textarea id="bulk" style="min-height:200px" placeholder="Mohamed Ould Ahmed ; 22123456\nFatimetou Mint Sidi\nAminata Ba"></textarea>
-      <div class="btn-row mt"><button class="btn light" data-close>${t('cancel')}</button><button class="btn" id="saveBulk">${t('save')}</button></div>`, (m) => {
-      $('#saveBulk', m).onclick = () => {
-        const lines = $('#bulk', m).value.split('\n').map((l) => l.trim()).filter(Boolean);
-        lines.forEach((l) => {
-          const [name, phone] = l.split(/[;\t]/).map((x) => (x || '').trim());
-          if (name) db.students.push({ id: uid(), name, phone: phone || '', classId: cid });
-        });
-        save(); closeModal(); render(); toast(`${lines.length} ${t('added')}`);
+      <label>${t('target_class')}</label>
+      <select id="impClass">${db.classes.map((c) => `<option value="${c.id}" ${c.id === cid ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      <div id="impPreview"></div>
+      <div class="btn-row mt"><button class="btn light" data-close>${t('cancel')}</button><button class="btn" id="doImport">${t('analyze')}</button></div>`, (m) => {
+      const prev = $('#impPreview', m), btn = $('#doImport', m);
+      const showPreview = () => {
+        const { plan, newClasses, dupes } = planImport(entries, $('#impClass', m).value);
+        if (!plan.length) {
+          prev.innerHTML = `<div class="hint mt">${dupes ? `${t('all_exist')} (${dupes})` : t('nothing_found')}</div>`;
+          btn.textContent = t('analyze'); return null;
+        }
+        const groups = {};
+        plan.forEach((p) => { (groups[p.label] = groups[p.label] || []).push(p); });
+        prev.innerHTML = `<div class="card mt" style="box-shadow:none;border:1.5px solid var(--green);background:var(--green-light)">
+          <b>✅ ${plan.length} ${t('found')}</b>
+          ${dupes ? `<div class="sub muted">${dupes} ${t('dupes')}</div>` : ''}
+          ${newClasses.length ? `<div class="sub muted">+ ${newClasses.length} ${t('new_classes')} : ${newClasses.map((c) => esc(c.name)).join(', ')}</div>` : ''}
+          ${Object.entries(groups).map(([g, l]) => `<div class="mt"><b>${esc(g)}</b> (${l.length})<div class="sub">${l.slice(0, 5).map((p) => esc(p.name)).join(' · ')}${l.length > 5 ? ` ${t('and_more')} ${l.length - 5} ${t('others')}` : ''}</div></div>`).join('')}
+        </div>`;
+        btn.textContent = `${t('do_import')} (${plan.length})`;
+        return { plan, newClasses };
+      };
+      let ready = null;
+      $('#pickFile', m).onclick = () => $('#impFile', m).click();
+      $('#impFile', m).onchange = async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        prev.innerHTML = `<p class="center muted mt">${t('reading')}</p>`;
+        try { entries = await readFileEntries(f); $('#bulk', m).value = ''; ready = showPreview(); }
+        catch (err) { prev.innerHTML = `<div class="hint mt">${t('bad_file')}</div>`; }
+        e.target.value = '';
+      };
+      $('#bulk', m).oninput = () => { entries = null; ready = null; prev.innerHTML = ''; btn.textContent = t('analyze'); };
+      $('#impClass', m).onchange = () => { if (entries) ready = showPreview(); };
+      $('#tplBtn', m).onclick = () => {
+        const rows = [['Nom', 'Téléphone parent', 'Classe'], ['Mohamed Ould Ahmed', '22123456', db.classes[0].name], ['Fatimetou Mint Sidi', '', db.classes[0].name], ['Aminata Ba', '36123456', (db.classes[1] || db.classes[0]).name]];
+        download('modele_eleves.csv', '\ufeff' + rows.map((r) => r.map(csvCell).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+      };
+      btn.onclick = () => {
+        if (!ready) {
+          if (!entries) {
+            const txt = $('#bulk', m).value;
+            entries = txt.trim() ? rowsToEntries(txt.split(/\r?\n/).map((l) => l.split(/[;\t]/)), '') : [];
+          }
+          ready = showPreview(); return;
+        }
+        ready.newClasses.forEach((c) => db.classes.push(c));
+        ready.plan.forEach((p) => db.students.push({ id: uid(), name: p.name, phone: p.phone, classId: p.classId }));
+        save(); closeModal();
+        if (ready.plan.length) state.elevesClass = ready.plan[0].classId;
+        state.search = ''; tab = 'eleves';
+        $$('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'eleves'));
+        render(); toast(`${ready.plan.length} ${t('added')}`);
       };
     });
   }
@@ -611,7 +805,7 @@
         <p style="margin:6px 0">${isIOS ? t('install_ios') : t('install_android')}</p>
         <p style="margin:6px 0" class="muted">${isIOS ? t('install_android') : t('install_ios')}</p>
       </div>
-      <p class="center muted" style="font-size:13px">${t('version')} 1.0</p>`;
+      <p class="center muted" style="font-size:13px">${t('version')} 1.1</p>`;
 
     $('#saveSch', v).onclick = () => {
       db.school.name = $('#schName', v).value.trim();
