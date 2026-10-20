@@ -43,12 +43,16 @@
       report_title: 'Rapport du jour', report_by_class: 'Par classe', report_absents: 'Absents', report_lates: 'Retards',
       report_incidents: 'Incidents', report_none: 'Aucun', report_sup: 'Surveillant', report_not_done: 'appel non fait',
       copied: 'Copié ✓', required: 'Champ obligatoire', name_required: 'Veuillez saisir un nom',
-      welcome: "Bienvenue ! Commencez par saisir le nom de l'école dans Réglages, puis ajoutez les élèves de chaque classe.",
+      welcome: "Bienvenue ! 1) Indiquez les divisions de chaque niveau (A, B, C…). 2) Importez la liste des élèves. 3) Saisissez le nom de l'école dans Réglages.",
+      divisions_btn: 'Divisions', divisions_title: 'Niveaux et divisions',
+      divisions_help: "Pour chaque niveau, choisissez le nombre de divisions : 1 = une seule classe, A…B = 2 divisions (A et B), A…C = 3 divisions, etc. « – » = niveau absent.",
+      divisions_legend: "Les élèves déjà enregistrés sont conservés. Une classe qui contient des élèves n'est jamais supprimée.",
+      divisions_kept: 'classe(s) conservée(s) car elles contiennent des élèves',
       default_classes: ['1ère AF', '2ème AF', '3ème AF', '4ème AF', '5ème AF', '6ème AF'],
       version: 'Version',
       import_list: '📥 Importer une liste', import_title: "Importer une liste d'élèves",
       import_file: 'Depuis un fichier Excel ou CSV', choose_file: '📂 Choisir un fichier (Excel, CSV)',
-      import_file_help: "Colonnes reconnues : Nom (obligatoire), Prénom, Téléphone, Classe. Si le fichier a une feuille par classe, chaque feuille devient une classe.",
+      import_file_help: "Colonnes reconnues : Nom (obligatoire), Prénom, Téléphone, Classe, Division. Exemple de classe : « 3e AF - A ». Si le fichier a une feuille par classe (ex : « 3AF B »), chaque feuille devient une classe.",
       import_paste: 'Ou coller les noms', target_class: 'Classe de destination (si le fichier n\'indique pas la classe)',
       analyze: 'Analyser', do_import: 'Importer', found: 'élève(s) trouvé(s)', dupes: 'doublon(s) ignoré(s)', new_classes: 'nouvelle(s) classe(s)',
       nothing_found: 'Aucun nom trouvé. Vérifiez le fichier.', reading: 'Lecture du fichier…', template: '⬇️ Télécharger un modèle',
@@ -92,12 +96,16 @@
       report_title: 'تقرير اليوم', report_by_class: 'حسب القسم', report_absents: 'الغائبون', report_lates: 'المتأخرون',
       report_incidents: 'المخالفات', report_none: 'لا يوجد', report_sup: 'المراقب', report_not_done: 'لم يُسجل الحضور',
       copied: 'تم النسخ ✓', required: 'حقل إجباري', name_required: 'يرجى إدخال الاسم',
-      welcome: 'مرحباً! ابدأ بإدخال اسم المدرسة في الإعدادات، ثم أضف تلاميذ كل قسم.',
+      welcome: 'مرحباً! 1) حدد شعب كل مستوى (أ، ب، ج…). 2) استورد قائمة التلاميذ. 3) أدخل اسم المدرسة في الإعدادات.',
+      divisions_btn: 'الشعب', divisions_title: 'المستويات والشعب',
+      divisions_help: 'لكل مستوى اختر عدد الشعب: 1 = قسم واحد، أ…ب = شعبتان، أ…ج = ثلاث شعب، إلخ. «–» = المستوى غير موجود.',
+      divisions_legend: 'يتم الاحتفاظ بالتلاميذ المسجلين. لا يُحذف أبداً قسم يحتوي على تلاميذ.',
+      divisions_kept: 'قسم تم الاحتفاظ به لأنه يحتوي على تلاميذ',
       default_classes: ['السنة الأولى', 'السنة الثانية', 'السنة الثالثة', 'السنة الرابعة', 'السنة الخامسة', 'السنة السادسة'],
       version: 'الإصدار',
       import_list: '📥 استيراد قائمة', import_title: 'استيراد قائمة التلاميذ',
       import_file: 'من ملف Excel أو CSV', choose_file: '📂 اختر ملفاً (Excel، CSV)',
-      import_file_help: 'الأعمدة المعروفة: الاسم (إجباري)، الهاتف، القسم. إذا كان الملف يحتوي على ورقة لكل قسم، تصبح كل ورقة قسماً.',
+      import_file_help: 'الأعمدة المعروفة: الاسم (إجباري)، الهاتف، القسم، الشعبة. إذا كان الملف يحتوي على ورقة لكل قسم، تصبح كل ورقة قسماً.',
       import_paste: 'أو الصق الأسماء', target_class: 'القسم المستهدف (إذا لم يحدد الملف القسم)',
       analyze: 'تحليل', do_import: 'استيراد', found: 'تلميذ', dupes: 'مكرر تم تجاهله', new_classes: 'قسم جديد',
       nothing_found: 'لم يتم العثور على أسماء. تحقق من الملف.', reading: 'جارٍ قراءة الملف…', template: '⬇️ تحميل نموذج',
@@ -284,7 +292,7 @@
     const showWelcome = !db.students.length;
     v.innerHTML = `
       <p class="date-line">${esc(fmtDate(key))}</p>
-      ${showWelcome ? `<div class="hint">👋 ${esc(t('welcome'))}<button class="btn gold block mt" id="homeImport">${t('import_list')}</button></div>` : ''}
+      ${showWelcome ? `<div class="hint">👋 ${esc(t('welcome'))}<div class="btn-row mt"><button class="btn light" id="homeDiv">🏫 ${t('divisions_btn')}</button><button class="btn gold" id="homeImport">${t('import_list')}</button></div></div>` : ''}
       <div class="stats">
         <div class="stat"><b>${s.total}</b><span>${t('students')}</span></div>
         <div class="stat"><b>${s.P}</b><span>${t('present')}</span></div>
@@ -308,6 +316,7 @@
     $$('[data-goto-class]', v).forEach((li) => li.addEventListener('click', () => {
       state.appelClass = li.dataset.gotoClass; state.appelDate = key; setTab('appel');
     }));
+    const hd = $('#homeDiv', v); if (hd) hd.onclick = () => divisionsModal();
     const hi = $('#homeImport', v); if (hi) hi.onclick = () => importModal(db.classes[0] && db.classes[0].id);
     $('#shareBtn', v).onclick = () => shareReport(key);
     $('#copyBtn', v).onclick = () => copyText(buildReport(key));
@@ -462,9 +471,9 @@
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <h2 style="margin:0">${t('classes')}</h2>
-          <button class="btn light small" id="addClass">${t('add_class')}</button>
+          <div style="display:flex;gap:6px"><button class="btn gold small" id="divBtn">🏫 ${t('divisions_btn')}</button><button class="btn light small" id="addClass">${t('add_class')}</button></div>
         </div>
-        <div class="chips mt">${db.classes.map((c) => `<button class="chip ${c.id === cid && !q ? 'on' : ''}" data-c="${c.id}">${esc(c.name)} · ${studentsOf(c.id).length}</button>`).join('')}</div>
+        <div class="chips wrap mt">${db.classes.map((c) => `<button class="chip ${c.id === cid && !q ? 'on' : ''}" data-c="${c.id}">${esc(c.name)} · ${studentsOf(c.id).length}</button>`).join('')}</div>
         ${cid && !q ? `<button class="btn light small" id="editClass">✏️ ${t('rename')} / ${t('delete')}</button>` : ''}
       </div>
       <div class="card">
@@ -489,6 +498,7 @@
       bindList();
     };
     $('#addClass', v).onclick = () => classModal();
+    $('#divBtn', v).onclick = () => divisionsModal();
     const ec = $('#editClass', v); if (ec) ec.onclick = () => classModal(classById(cid));
     const as = $('#addStudent', v); if (as) as.onclick = () => studentModal(null, cid);
     const ba = $('#bulkAdd', v); if (ba) ba.onclick = () => importModal(cid);
@@ -504,15 +514,82 @@
     }).join('');
   }
 
+  /* ---------- Niveaux et divisions (A, B, C…) ---------- */
+  function divisionsModal() {
+    const current = {};
+    for (let l = 1; l <= 6; l++) {
+      const cls = db.classes.filter((c) => { const p = parseClass(c.name); return p && p.level === l; });
+      current[l] = cls.length;
+    }
+    const choice = Object.assign({}, current);
+    const row = (l) => `<div class="student-row" data-level="${l}">
+        <span class="name">${esc(levelLabel(l))}</span>
+        <div class="seg">${[0, 1, 2, 3, 4].map((n) => `<button data-n="${n}" class="P ${choice[l] === n ? 'on' : ''}" title="${n}">${n === 0 ? '–' : n === 1 ? '1' : divLabel(0) + '…' + divLabel(n - 1)}</button>`).join('')}</div>
+      </div>`;
+    openModal(`<h2>🏫 ${t('divisions_title')}</h2>
+      <p class="legend" style="margin-top:0">${t('divisions_help')}</p>
+      <div id="divRows">${[1, 2, 3, 4, 5, 6].map(row).join('')}</div>
+      <p class="legend">${t('divisions_legend')}</p>
+      <div class="btn-row mt"><button class="btn light" data-close>${t('cancel')}</button><button class="btn" id="saveDiv">${t('save')}</button></div>`, (m) => {
+      $$('.seg button', m).forEach((b) => (b.style.width = 'auto', b.style.minWidth = '40px', b.style.padding = '0 6px'));
+      $('#divRows', m).addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-n]'); if (!b) return;
+        const l = +b.closest('[data-level]').dataset.level;
+        choice[l] = +b.dataset.n;
+        $$('button', b.parentNode).forEach((x) => x.classList.toggle('on', x === b));
+      });
+      $('#saveDiv', m).onclick = () => {
+        const kept = applyDivisions(choice);
+        save(); closeModal(); render();
+        toast(kept ? `${t('saved')} – ${kept} ${t('divisions_kept')}` : t('saved'));
+      };
+    });
+  }
+  // Ajoute / renomme / supprime les classes pour obtenir le nombre de divisions voulu.
+  // Une classe qui contient des élèves n'est jamais supprimée.
+  function applyDivisions(choice) {
+    let kept = 0;
+    const hasStudents = (c) => db.students.some((s) => s.classId === c.id);
+    for (let l = 1; l <= 6; l++) {
+      const n = choice[l];
+      const cls = db.classes.filter((c) => { const p = parseClass(c.name); return p && p.level === l; });
+      const byDiv = {};
+      cls.forEach((c) => { const d = parseClass(c.name).div; if (!byDiv[d]) byDiv[d] = c; else byDiv['dup' + c.id] = c; });
+      const remove = (c) => { if (hasStudents(c)) { kept++; return; } db.classes = db.classes.filter((x) => x.id !== c.id); };
+      if (n === 0) { cls.forEach(remove); continue; }
+      if (n === 1) {
+        if (!byDiv['']) {
+          const first = byDiv.a || cls[0];
+          if (first) { first.name = prettyClassName(l, -1); byDiv[''] = first; }
+          else db.classes.push(byDiv[''] = { id: uid(), name: prettyClassName(l, -1) });
+        }
+        cls.forEach((c) => { if (c !== byDiv['']) remove(c); });
+        continue;
+      }
+      // n >= 2 : divisions A, B, C…
+      if (byDiv[''] && !byDiv.a) { byDiv[''].name = prettyClassName(l, 0); byDiv.a = byDiv['']; delete byDiv['']; }
+      const wanted = new Set();
+      for (let i = 0; i < n; i++) {
+        const d = 'abcde'[i];
+        if (!byDiv[d]) db.classes.push(byDiv[d] = { id: uid(), name: prettyClassName(l, i) });
+        wanted.add(byDiv[d]);
+      }
+      cls.forEach((c) => { if (!wanted.has(c)) remove(c); });
+    }
+    sortClasses();
+    return kept;
+  }
+
   function classModal(cls) {
     openModal(`<h2>${cls ? t('rename') : t('add_class')}</h2>
-      <label>${t('class_name')}</label><input id="clsName" value="${esc(cls ? cls.name : '')}" placeholder="Ex : 3ème AF B">
+      <label>${t('class_name')}</label><input id="clsName" value="${esc(cls ? cls.name : '')}" placeholder="Ex : 3ème AF - B">
       <div class="btn-row mt"><button class="btn light" data-close>${t('cancel')}</button><button class="btn" id="saveCls">${t('save')}</button></div>
       ${cls ? `<button class="btn danger block mt" id="delCls">🗑️ ${t('delete')}</button>` : ''}`, (m) => {
       $('#clsName', m).focus();
       $('#saveCls', m).onclick = () => {
         const name = $('#clsName', m).value.trim(); if (!name) return toast(t('name_required'));
         if (cls) cls.name = name; else { const c = { id: uid(), name }; db.classes.push(c); state.elevesClass = c.id; }
+        sortClasses();
         save(); closeModal(); render();
       };
       const d = $('#delCls', m);
@@ -551,15 +628,43 @@
   }
 
   /* ---------- Import de liste (Excel / CSV / copier-coller) ---------- */
-  const norm = (x) => String(x == null ? '' : x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\u064B-\u0652\u0640]/g, '').trim();
+  const norm = (x) => String(x == null ? '' : x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\u064B-\u0655\u0640]/g, '').trim();
+  const AR_ORD = { 'الاولي': 1, 'الاولى': 1, 'الثانية': 2, 'الثالثة': 3, 'الرابعة': 4, 'الخامسة': 5, 'السادسة': 6 };
+  const AR_ORD_NAME = ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة'];
+  const DIV_LETTERS = ['A', 'B', 'C', 'D', 'E'];
+  const AR_DIV = { 'ا': 'a', 'ب': 'b', 'ج': 'c', 'د': 'd', 'ه': 'e' };
+  const AR_DIV_NAME = ['أ', 'ب', 'ج', 'د', 'هـ'];
+  // Analyse un nom de classe : « 3ème AF - B », « 3e AF B », « 3AFB », « السنة الثالثة ب » → { level: 3, div: 'b' }
+  function parseClass(name) {
+    let n = norm(name).replace(/السنة|سنة|الصف|القسم/g, ' af ');
+    Object.keys(AR_ORD).forEach((w) => { n = n.split(w).join(' ' + AR_ORD[w] + ' '); });
+    n = n.replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+    n = n.replace(/[ابجده]$/, (c) => AR_DIV[c]);
+    const m = n.match(/^(?:af)?([1-6])(?:ieme|eme|em|ere|er|re|e)?(?:af|annee|anneefondamentale)?(?:af)?([a-e])?$/);
+    return m ? { level: +m[1], div: m[2] || '' } : null;
+  }
   function canonClass(name) {
-    const n = norm(name).replace(/[^a-z0-9\u0600-\u06ff]/g, '');
-    const m = n.match(/^(\d)(ere|er|re|eme|em|e)?(af|annee|anneefondamentale)?$/);
-    return m ? m[1] + 'af' : n;
+    const p = parseClass(name);
+    return p ? p.level + 'af' + p.div : norm(name).replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+  }
+  function levelLabel(level) {
+    return db.lang === 'ar' ? `السنة ${AR_ORD_NAME[level]}` : `${level}${level === 1 ? 'ère' : 'ème'} AF`;
+  }
+  function divLabel(i) { return db.lang === 'ar' ? AR_DIV_NAME[i] : DIV_LETTERS[i]; }
+  function prettyClassName(level, divIdx) { return levelLabel(level) + (divIdx >= 0 ? ' - ' + divLabel(divIdx) : ''); }
+  function prettyFromRaw(raw) {
+    const p = parseClass(raw);
+    return p ? prettyClassName(p.level, p.div ? 'abcde'.indexOf(p.div) : -1) : raw;
   }
   function findClassByName(name) {
     const c = canonClass(name);
     return db.classes.find((k) => canonClass(k.name) === c);
+  }
+  function sortClasses() {
+    const key = (c, i) => { const p = parseClass(c.name); return p ? p.level * 10 + (p.div ? 'abcde'.indexOf(p.div) + 1 : 0) : 1000 + i; };
+    const withIdx = db.classes.map((c, i) => ({ c, k: key(c, i) }));
+    withIdx.sort((a, b) => a.k - b.k);
+    db.classes = withIdx.map((x) => x.c);
   }
   let xlsxPromise = null;
   function loadXLSX() {
@@ -592,11 +697,12 @@
   function headerRole(h) {
     const n = norm(h);
     if (!n) return null;
-    if (/parent|tuteur|pere|mere|ولي|الأب|الام|الأم/.test(n) && /tel|phone|portable|mobile|contact|هاتف/.test(n)) return 'phone';
+    if (/division|groupe|section|شعبة|الشعبة|فوج|الفوج/.test(n)) return 'div';
+    if (/parent|tuteur|pere|mere|ولي|الاب|الام/.test(n) && /tel|phone|portable|mobile|contact|هاتف/.test(n)) return 'phone';
     if (/tel|phone|portable|mobile|contact|هاتف|جوال/.test(n)) return 'phone';
     if (/parent|tuteur|pere|mere|ولي/.test(n)) return null;
     if (/classe|class|niveau|قسم|القسم|الفصل|المستوى/.test(n)) return 'class';
-    if (/prenom|first|الاسم الأول/.test(n)) return 'first';
+    if (/prenom|first|الاسم الاول/.test(n)) return 'first';
     if (/nom|name|eleve|اسم|الاسم|تلميذ|التلميذ/.test(n)) return 'name';
     return null;
   }
@@ -619,6 +725,8 @@
         name = [fn, nm].filter(Boolean).join(' ');
         phone = cols.phone !== undefined ? r[cols.phone] || '' : '';
         cls = cols.class !== undefined ? r[cols.class] || '' : '';
+        const dv = cols.div !== undefined ? r[cols.div] || '' : '';
+        if (dv) cls = (cls ? cls + ' ' : '') + dv;
       } else {
         name = r.find((c) => c && /[A-Za-z\u00C0-\u024F\u0600-\u06FF]/.test(c) && !PHONE_RE.test(c)) || '';
         phone = r.find((c) => c && PHONE_RE.test(c)) || '';
@@ -655,8 +763,8 @@
         if (c) { cid = c.id; label = c.name; }
         else {
           const key = canonClass(e.className);
-          if (!newClasses.has(key)) newClasses.set(key, { id: uid(), name: e.className });
-          cid = newClasses.get(key).id; label = e.className;
+          if (!newClasses.has(key)) newClasses.set(key, { id: uid(), name: prettyFromRaw(e.className) });
+          cid = newClasses.get(key).id; label = newClasses.get(key).name;
         }
       }
       if (!cid) return;
@@ -717,7 +825,7 @@
       $('#bulk', m).oninput = () => { entries = null; ready = null; prev.innerHTML = ''; btn.textContent = t('analyze'); };
       $('#impClass', m).onchange = () => { if (entries) ready = showPreview(); };
       $('#tplBtn', m).onclick = () => {
-        const rows = [['Nom', 'Téléphone parent', 'Classe'], ['Mohamed Ould Ahmed', '22123456', db.classes[0].name], ['Fatimetou Mint Sidi', '', db.classes[0].name], ['Aminata Ba', '36123456', (db.classes[1] || db.classes[0]).name]];
+        const rows = [['Nom', 'Téléphone parent', 'Classe'], ['Mohamed Ould Ahmed', '22123456', '3e AF - A'], ['Fatimetou Mint Sidi', '', '3e AF - A'], ['Aminata Ba', '36123456', '3e AF - B'], ['Sidi Ould Cheikh', '', '3e AF - C']];
         download('modele_eleves.csv', '\ufeff' + rows.map((r) => r.map(csvCell).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
       };
       btn.onclick = () => {
@@ -729,6 +837,7 @@
           ready = showPreview(); return;
         }
         ready.newClasses.forEach((c) => db.classes.push(c));
+        sortClasses();
         ready.plan.forEach((p) => db.students.push({ id: uid(), name: p.name, phone: p.phone, classId: p.classId }));
         save(); closeModal();
         if (ready.plan.length) state.elevesClass = ready.plan[0].classId;
@@ -789,6 +898,7 @@
         <label>${t('language')}</label>
         <div class="chips"><button class="chip ${db.lang === 'fr' ? 'on' : ''}" data-l="fr">Français</button><button class="chip ${db.lang === 'ar' ? 'on' : ''}" data-l="ar">العربية</button></div>
         <button class="btn block mt" id="saveSch">${t('save')}</button>
+        <button class="btn light block mt" id="divSettings">🏫 ${t('divisions_title')}</button>
       </div>
       <div class="card">
         <h2>💾 ${t('data')}</h2>
@@ -805,8 +915,9 @@
         <p style="margin:6px 0">${isIOS ? t('install_ios') : t('install_android')}</p>
         <p style="margin:6px 0" class="muted">${isIOS ? t('install_android') : t('install_ios')}</p>
       </div>
-      <p class="center muted" style="font-size:13px">${t('version')} 1.1</p>`;
+      <p class="center muted" style="font-size:13px">${t('version')} 1.2</p>`;
 
+    $('#divSettings', v).onclick = () => divisionsModal();
     $('#saveSch', v).onclick = () => {
       db.school.name = $('#schName', v).value.trim();
       db.school.supervisor = $('#supName', v).value.trim();

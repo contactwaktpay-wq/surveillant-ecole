@@ -164,3 +164,7 @@ textarea { min-height: 80px; resize: vertical; }
 .muted { color: var(--muted); }
 .mt { margin-top: 10px; }
 .center { text-align: center; }
+
+.chips.wrap { flex-wrap: wrap; overflow: visible; }
+.chips.wrap .chip { padding: 6px 11px; font-size: 13.5px; }
+[dir="rtl"] .list .muted { display: inline-block; transform: scaleX(-1); }
