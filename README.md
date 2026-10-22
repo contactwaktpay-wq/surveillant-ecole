@@ -1,20 +1,20 @@
-# Surveillant – École primaire (Mauritanie)
+# Surveillant – Vie scolaire (école primaire, Mauritanie)
 
-Application web simple et **installable sur l'écran d'accueil du téléphone** (PWA) pour le surveillant d'une école primaire.
-Fonctionne **hors ligne**, en **français et en arabe**. Les données restent sur le téléphone.
+Application web **installable sur l'écran d'accueil** (PWA), **hors ligne**, **français / العربية**.
+Toutes les données restent sur le téléphone du surveillant.
 
 ## Fonctions
-- ✅ **Appel** par classe (Présent / Absent / Retard), bouton « Tous présents »
-- ⚠️ **Incidents** : bagarre, insolence, tenue, travail non fait… avec mesure prise
-- 🏫 **Niveaux et divisions** : 1ère → 6ème AF avec divisions A, B, C, D (ex : « 3ème AF - B »)
-- 👧🏾 **Élèves** : téléphone du parent (appel / WhatsApp)
-- 📥 **Importer une liste d'élèves** : fichier Excel (.xlsx, .xls), CSV ou copier-coller. Colonnes reconnues : Nom, Prénom, Téléphone, Classe, Division (« 3e AF -A », « 3AF B », « 3ème AF - C » sont reconnus). Une feuille Excel par classe est aussi acceptée. Les doublons sont ignorés.
-- 🏠 **Tableau de bord** du jour + **rapport partageable sur WhatsApp**
-- 💾 Export CSV (Excel), sauvegarde / restauration
-
-## Installation sur le téléphone
-- **Android (Chrome)** : ouvrir le site → bouton « Installer » ou menu ⋮ → « Ajouter à l'écran d'accueil »
-- **iPhone (Safari)** : Partager ⬆️ → « Sur l'écran d'accueil »
+- ✅ **Appel** par classe avec **bouton « Enregistrer l'appel »**, appel verrouillé après enregistrement, **« Modifier »** pour corriger (avec « Annuler »).
+  Brouillon conservé automatiquement, élèves non marqués signalés, heure d'arrivée des retards, 1 ou 2 appels par jour (matin / après-midi).
+- 💬 **Prévenir les parents** des absents et retardataires en un toucher (WhatsApp, SMS, appel) – message déjà rédigé en arabe et/ou français, accordé fille/garçon.
+- 📝 **Justification des absences** (maladie, voyage, famille…) et liste des absences non justifiées.
+- ⚠️ **Incidents** (type, mesure prise, témoin) + convocation des parents.
+- 🚪 **Sorties anticipées** : qui a récupéré l'enfant, lien de parenté, téléphone.
+- 👧🏾 **Élèves** : niveaux et divisions (A, B, C…), import Excel/CSV, parent, 2 téléphones, sexe, santé/allergies, fiche complète.
+- 💰 **Mensualités** (optionnel) : payés / non payés par mois, encaissé, reste, relance WhatsApp.
+- 📊 **Rapports** : rapport du jour (WhatsApp / PDF), rapport mensuel (taux de présence, élèves les plus absents), exports Excel.
+- 🖨️ **Fiches d'appel papier** de secours (semaine, toutes classes).
+- 🔒 **Code PIN**, 💾 sauvegarde partageable (WhatsApp) et restauration, nouvelle année scolaire.
 
 ## Déploiement
-Site statique, aucune compilation. Sur Netlify : *Build command* vide, *Publish directory* = `.` (déjà configuré dans `netlify.toml`).
+Site statique sans compilation. Netlify : build vide, dossier publié `.` (voir `netlify.toml`).
