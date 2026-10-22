@@ -18,9 +18,10 @@ Toutes les données restent sur le téléphone du surveillant.
   (les autres sont cachées partout : appel, élèves, rapports, exports). Écran « Qui utilise ce téléphone ? », code personnel facultatif,
   code de la direction. Un téléphone par surveillant : la direction envoie la sauvegarde → le surveillant la restaure et choisit son nom →
   le soir il renvoie sa sauvegarde → la direction clique **« Fusionner »** (appels, incidents, sorties, paiements ajoutés sans rien effacer).
-- ☁️ **Sauvegarde en ligne** (v2.2) : code école + mot de passe, données **chiffrées sur le téléphone** (AES-GCM) avant l'envoi,
+- ☁️ **Sauvegarde en ligne** (v2.3) : **sans mot de passe** – un toucher sur « Activer », l'application crée une clé secrète et
+  un **lien de récupération** (WhatsApp) + **QR code** pour les surveillants. Données **chiffrées sur le téléphone** (AES-GCM) avant l'envoi,
   synchronisation automatique entre téléphones (direction + surveillants), fonctionne hors ligne. Après un vidage du cache ou sur un
-  nouveau téléphone : « Récupérer les données ». Stockage : Netlify Functions + Netlify Blobs (`netlify/functions/sync.mjs`).
+  nouveau téléphone : toucher le lien de récupération. Stockage : Netlify Functions + Netlify Blobs (`netlify/functions/sync.mjs`).
 - 🔒 **Code PIN**, 💾 sauvegarde partageable (WhatsApp) et restauration, nouvelle année scolaire.
 
 ## Déploiement

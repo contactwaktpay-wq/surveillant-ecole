@@ -346,7 +346,9 @@ textarea { min-height: 80px; resize: vertical; }
 .olist.ticks { list-style: none; padding-inline-start: 4px; }
 .olist.ticks li::before { content: '✓ '; color: var(--green); font-weight: 700; }
 .hint.cloud-hint { display: flex; }
-#cCode { direction: ltr; }
+#cCode, #cKey { direction: ltr; text-align: center; letter-spacing: 1px; font-family: monospace; }
+.qr-box { display: flex; justify-content: center; margin: 14px 0 4px; }
+.qr-box svg { width: 200px; height: 200px; background: #fff; border-radius: 12px; border: 1px solid var(--border); }
 
 /* impression */
 .print-area { display: none; }

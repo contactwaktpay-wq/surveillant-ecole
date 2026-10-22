@@ -8,7 +8,7 @@
 
   const I18N = window.I18N;
   const KEY = 'surveillant_data_v1';
-  const VERSION = '2.2';
+  const VERSION = '2.3';
 
   /* ---------------- Utilitaires de base ---------------- */
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -356,6 +356,7 @@
     const cloudOk = cloud && cloud.last && Date.now() - cloud.last < 7 * 864e5;
     const backupOld = !noStudents && !cloudOk && (!db.lastBackup || Date.now() - new Date(db.lastBackup).getTime() > (cloud ? 7 : 2) * 864e5);
     const cloudHint = !noStudents && !cloud && isAdmin();
+    const linkHint = cloud && cloud.key && !cloud.shared && isAdmin();
     const rate = s.P + s.A + s.R ? Math.round(((s.P + s.R) / (s.P + s.A + s.R)) * 100) : null;
 
     v.innerHTML = `
@@ -371,6 +372,7 @@
           <li><b>${t('step3')}</b><button class="btn gold small" id="homeImport">📥 ${t('import_list')}</button></li>
         </ol></div>` : ''}
       ${noAssigned ? `<div class="hint warn">${t('no_class_assigned')}</div>` : ''}
+      ${linkHint ? `<div class="hint warn cloud-hint">🔗 ${t('cloud_not_shared')} <button class="btn small" id="goCloud">${t('send')}</button></div>` : ''}
       ${cloudHint ? `<div class="hint warn cloud-hint">☁️ ${t('cloud_hint_home')} <button class="btn small" id="goCloud">${t('activate')}</button></div>` : ''}
       ${backupOld ? `<div class="hint warn">💾 ${t('backup_reminder')} <button class="btn small" id="quickBackup">${t('backup_now')}</button></div>` : ''}
       <div class="stats">
@@ -2008,11 +2010,49 @@
   const unb64 = (str) => { const bin = atob(str); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
   const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, '0')).join('');
   const normCode = (c) => String(c || '').trim().toLowerCase().replace(/\s+/g, '-');
-  async function deriveCloud(code, pass) {
-    const base = await crypto.subtle.importKey('raw', te.encode(pass), 'PBKDF2', false, ['deriveBits']);
-    const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: te.encode('surveillant-ecole|' + normCode(code)), iterations: 150000, hash: 'SHA-256' }, base, 512));
-    return { id: hex(bits.slice(32)), k: b64(bits.slice(0, 32)) };
+
+  // Clé de l'école : 20 caractères aléatoires (≈100 bits), créée automatiquement – rien à inventer ni à retenir.
+  const KEY_ABC = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  function newSchoolKey() {
+    const r = crypto.getRandomValues(new Uint8Array(20));
+    return Array.from(r, (b) => KEY_ABC[b & 31]).join('').replace(/(.{4})(?!$)/g, '$1-');
   }
+  function cleanKey(txt) {
+    let x = String(txt || '').trim();
+    const m = x.match(/[#&?]cle=([A-Za-z0-9-]+)/); if (m) x = m[1];
+    x = x.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/I/g, '1');
+    if (x.length !== 20 || [...x].some((c) => !KEY_ABC.includes(c))) return null;
+    return x.replace(/(.{4})(?!$)/g, '$1-');
+  }
+  async function deriveKey(key) {
+    const raw = te.encode('surveillant-ecole|' + key.replace(/-/g, ''));
+    const a = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...te.encode('id|'), ...raw])));
+    const b = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...te.encode('k|'), ...raw])));
+    return { id: hex(a), k: b64(b), key };
+  }
+  const recoveryLink = () => (cloud && cloud.key ? `${location.origin}/#cle=${cloud.key}` : '');
+  let qrPromise = null;
+  function loadQR() {
+    if (window.qrcode) return Promise.resolve(window.qrcode);
+    if (!qrPromise) qrPromise = new Promise((res, rej) => {
+      const sc = document.createElement('script'); sc.src = 'lib/qrcode.js';
+      sc.onload = () => res(window.qrcode); sc.onerror = () => { qrPromise = null; rej(new Error('qr')); };
+      document.head.appendChild(sc);
+    });
+    return qrPromise;
+  }
+  async function fillQR(el, text) {
+    try { const q = (await loadQR())(0, 'M'); q.addData(text); q.make(); el.innerHTML = q.createSvgTag(5, 3); } catch (e) { el.hidden = true; }
+  }
+  async function copyText(txt) {
+    try { await navigator.clipboard.writeText(txt); toast('📋 ' + t('copied')); }
+    catch (e) { prompt(t('cloud_copy'), txt); }
+  }
+  function shareLink() {
+    shareText(tf('cloud_link_msg', { school: db.school.name || '', link: recoveryLink() }));
+    if (cloud && !cloud.shared) { cloud.shared = true; saveCloud(); setTimeout(() => { if (tab === 'plus' && state.plus === 'cloud' && $('#modal').hidden) render(); }, 500); }
+  }
+
   async function gzip(u8, compress) {
     const S = compress ? window.CompressionStream : window.DecompressionStream;
     if (!S) return null;
@@ -2108,14 +2148,13 @@
     if (ok && cloud && cloud.dirty) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 1500); }
     return ok;
   }
-  async function cloudConnect(code, pass, create) {
-    const cred = await deriveCloud(code, pass);
+  async function cloudConnect(cred, create) {
     let meta;
     try { meta = await api('GET', { id: cred.id, meta: '1' }); } catch (e) { throw new Error('network'); }
     if (meta.status !== 200 && !(meta.status === 404 && meta.j && meta.j.error === 'not_found')) throw new Error(meta.j ? 'network' : 'service');
     const exists = meta.status === 200;
     if (!exists && !create) throw new Error('not_found');
-    const c = { code: normCode(code), id: cred.id, k: cred.k, ver: 0, dirty: true, last: 0 };
+    const c = { key: cred.key || null, code: cred.code || null, id: cred.id, k: cred.k, ver: 0, dirty: true, last: 0, shared: !create };
     if (exists) {
       const g = await api('GET', { id: cred.id });
       if (g.status !== 200 || !g.j) throw new Error('network');
@@ -2132,22 +2171,78 @@
     return exists;
   }
   function openCloud() { state.plus = 'cloud'; setTab('plus', true); window.scrollTo(0, 0); }
+  const cloudErrKey = (e) => { const m = String(e && e.message); return m === 'not_found' ? 'cloud_err_nolink' : m === 'service' ? 'cloud_err_service' : 'cloud_err_network'; };
+  async function joinWithKey(key, btn) {
+    if (!window.crypto || !crypto.subtle) throw new Error('service');
+    const cred = await deriveKey(key);
+    if (cloud && cloud.id === cred.id) return 'same';
+    const existed = await cloudConnect(cred, false);
+    return existed ? 'ok' : 'none';
+  }
+  function afterJoin() {
+    toast('✅ ' + t('cloud_existing'));
+    if (multi() && !loggedIn()) { render(); showLogin(); return; }
+    setTab('home');
+  }
+  // Lien de récupération ouvert (…/#cle=XXXX) : connexion automatique
+  async function handleKeyLink() {
+    const m = location.hash.match(/cle=([A-Za-z0-9-]+)/);
+    if (!m) return false;
+    history.replaceState(null, '', location.pathname + location.search);
+    const key = cleanKey(m[1]);
+    if (!key) { toast('⚠️ ' + t('cloud_err_badkey')); return true; }
+    const go = async () => {
+      openModal(`<h2>☁️ ${t('cloud_working')}</h2><p class="muted">${t('cloud_joining')}</p>`);
+      try {
+        const r = await joinWithKey(key);
+        closeModal();
+        if (r === 'same') { toast('✅ ' + t('cloud_synced')); syncNow(); return; }
+        afterJoin();
+      } catch (e) {
+        openModal(`<h2>⚠️ ${t('cloud')}</h2><p>${t(cloudErrKey(e))}</p><button class="btn block" data-close>${t('close')}</button>`);
+      }
+    };
+    if (cloud && cloud.key === key) { syncNow(); return true; }
+    if (pristine() && !cloud) go();
+    else confirmBox(cloud ? t('cloud_switch_confirm') : t('cloud_join_confirm'), t('cloud_join_btn'), () => { cloud = null; go(); });
+    return true;
+  }
+  function linkModal(first) {
+    const link = recoveryLink();
+    openModal(`<h2>${first ? '✅ ' + t('cloud_created') : '🔗 ' + t('cloud_link_title')}</h2>
+      ${first ? `<p style="margin-top:0"><b>${t('cloud_last_step')}</b></p>` : ''}
+      <p class="muted" style="margin-top:0">${t('cloud_link_help')}</p>
+      <button class="btn gold block" id="lkSend">💬 ${t('cloud_link_send')}</button>
+      <div class="qr-box" id="lkQr"></div>
+      <p class="legend center">${t('cloud_qr_help')}</p>
+      <div class="hint warn">🔒 ${t('cloud_link_warn')}</div>
+      <div class="btn-row"><button class="btn light" id="lkCopy">📋 ${t('cloud_copy')}</button><button class="btn light" data-close>${t('close')}</button></div>`, (m) => {
+      fillQR($('#lkQr', m), link);
+      $('#lkSend', m).onclick = () => shareLink();
+      $('#lkCopy', m).onclick = () => { copyText(link); if (!cloud.shared) { cloud.shared = true; saveCloud(); } };
+    });
+  }
 
   function renderCloud(v) {
     if (cloud) {
       v.innerHTML = `<h2 class="page-title">☁️ ${t('cloud')}</h2>
+        ${cloud.key && !cloud.shared ? `<div class="hint warn cloud-hint">⚠️ ${t('cloud_not_shared')} <button class="btn small" id="cSendTop">💬 ${t('send')}</button></div>` : ''}
         <div class="card">
           <h2>✅ ${t('cloud_on_title')}</h2>
           <p class="cloud-status" id="cloudStatus">${esc(cloudStatusText())}</p>
-          <p>${t('cloud_code')} : <b class="code-pill">${esc(cloud.code)}</b></p>
           <button class="btn block" id="cSync">🔄 ${t('cloud_sync_now')}</button>
           <p class="legend">${t('cloud_auto')}</p>
         </div>
-        <div class="card">
-          <h2>📲 ${t('cloud_other_title')}</h2>
-          <ol class="olist">${[1, 2, 3].map((i) => `<li>${t('cloud_other_' + i)}</li>`).join('')}</ol>
-          <button class="btn light block" id="cShare">💬 ${t('cloud_share')}</button>
-        </div>
+        ${cloud.key ? `<div class="card">
+          <h2>🔗 ${t('cloud_link_title')}</h2>
+          <p class="muted" style="margin-top:0">${t('cloud_link_help')}</p>
+          <button class="btn gold block" id="cSend">💬 ${t('cloud_link_send')}</button>
+          <div class="qr-box" id="cQr"></div>
+          <p class="legend center">${t('cloud_qr_help')}</p>
+          <p class="center">${t('cloud_key_label')} : <b class="code-pill">${esc(cloud.key)}</b></p>
+          <button class="btn light block" id="cCopy">📋 ${t('cloud_copy')}</button>
+          <div class="hint warn mt">🔒 ${t('cloud_link_warn')}</div>
+        </div>` : `<div class="card"><p>${t('cloud_code')} : <b class="code-pill">${esc(cloud.code || '')}</b></p></div>`}
         <div class="card">
           <p class="muted" style="margin-top:0">🔐 ${t('cloud_privacy')}</p>
           <p class="legend">🧹 ${t('cache_tip')}</p>
@@ -2155,55 +2250,50 @@
           <p class="legend">${t('cloud_off_help')}</p>
         </div>`;
       $('#cSync', v).onclick = async () => { const ok = await syncNow(); toast(ok ? '✅ ' + t('cloud_synced') : '⚠️ ' + t('cloud_state_error')); if (tab === 'plus' && state.plus === 'cloud') render(); };
-      $('#cShare', v).onclick = () => shareText(tf('cloud_share_msg', { url: location.origin, code: cloud.code, school: db.school.name || '' }));
+      if (cloud.key) {
+        fillQR($('#cQr', v), recoveryLink());
+        $('#cSend', v).onclick = () => shareLink();
+        const st = $('#cSendTop', v); if (st) st.onclick = () => shareLink();
+        $('#cCopy', v).onclick = () => { copyText(recoveryLink()); if (!cloud.shared) { cloud.shared = true; saveCloud(); } };
+      }
       $('#cOff', v).onclick = () => confirmBox(t('cloud_off_confirm'), t('cloud_off_btn'), () => { cloud = null; saveCloud(); setSync('off'); render(); }, true);
       return;
     }
-    const canCreate = isAdmin();
-    if (!canCreate) state.cloudMode = 'connect';
-    if (!state.cloudMode) state.cloudMode = pristine() ? 'connect' : 'create';
-    const mode = state.cloudMode;
-    const suggest = (normCode(db.school.name).replace(/[^a-z0-9\u0600-\u06ff-]/g, '').slice(0, 18) || 'ecole') + '-' + Math.floor(1000 + Math.random() * 9000);
+    const canCreate = isAdmin() && !pristine();
     v.innerHTML = `<h2 class="page-title">☁️ ${t('cloud')}</h2>
       <div class="card">
         <p style="margin-top:0">${t('cloud_intro')}</p>
         <ul class="olist ticks">${[1, 2, 3, 4].map((i) => `<li>${t('cloud_p' + i)}</li>`).join('')}</ul>
+        ${canCreate ? `<button class="btn gold block mt" id="cCreate">☁️ ${t('cloud_activate_btn')}</button>` : ''}
       </div>
       <div class="card">
-        ${canCreate ? `<div class="seg-ctl"><button class="${mode === 'connect' ? 'on' : ''}" data-cm="connect">${t('cloud_have_code')}</button><button class="${mode === 'create' ? 'on' : ''}" data-cm="create">${t('cloud_create')}</button></div>` : ''}
-        <label>${t('cloud_code')}</label>
-        <input id="cCode" autocapitalize="none" autocomplete="username" spellcheck="false" value="${mode === 'create' ? esc(suggest) : ''}" placeholder="${t('cloud_code_ph')}">
-        <p class="legend" style="margin-top:4px">${mode === 'create' ? t('cloud_code_help') : t('cloud_code_help2')}</p>
-        <label>${t('cloud_pass')}</label>
-        <input id="cPass" type="password" autocomplete="${mode === 'create' ? 'new-password' : 'current-password'}">
-        ${mode === 'create' ? `<label>${t('cloud_pass2')}</label><input id="cPass2" type="password" autocomplete="new-password">
-          <div class="hint warn mt">🔑 ${t('cloud_pass_warn')}</div>` : ''}
-        <label class="switch mt"><input type="checkbox" id="cShow"> <span>${t('show_pass')}</span></label>
-        <button class="btn block mt" id="cGo">${mode === 'create' ? '☁️ ' + t('cloud_create_btn') : '🔓 ' + t('cloud_connect_btn')}</button>
+        <h2>🔗 ${t('cloud_have_link')}</h2>
+        <p class="muted" style="margin-top:0">${t('cloud_have_link_help')}</p>
+        <label>${t('cloud_key_label')}</label>
+        <input id="cKey" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX">
+        <button class="btn ${canCreate ? 'light' : ''} block mt" id="cJoin">🔓 ${t('cloud_connect_btn')}</button>
         <p class="pin-err cloud-err" id="cErr" hidden></p>
+        ${!canCreate && isAdmin() ? `<p class="legend">${t('cloud_new_school_hint')}</p><button class="btn light block" id="cCreate">☁️ ${t('cloud_activate_btn')}</button>` : ''}
       </div>
       <p class="legend center">🧹 ${t('cache_tip')}</p>`;
-    $$('[data-cm]', v).forEach((b) => (b.onclick = () => { state.cloudMode = b.dataset.cm; render(); }));
-    $('#cShow', v).onchange = (e) => $$('input[type=password], input[data-pw]', v).forEach((i) => { i.type = e.target.checked ? 'text' : 'password'; i.dataset.pw = '1'; });
-    $('#cGo', v).onclick = async () => {
-      const err = (k) => { const el = $('#cErr', v); el.textContent = t(k); el.hidden = false; };
-      $('#cErr', v).hidden = true;
-      const code = $('#cCode', v).value, pass = $('#cPass', v).value;
-      if (normCode(code).length < 4 || pass.length < 6) return err('cloud_err_short');
-      if (mode === 'create' && pass !== $('#cPass2', v).value) return err('cloud_err_match');
-      if (!window.crypto || !crypto.subtle) return err('cloud_err_service');
-      const btn = $('#cGo', v); btn.disabled = true; btn.textContent = '⏳ ' + t('cloud_working');
+    const err = (k) => { const el = $('#cErr', v); el.textContent = t(k); el.hidden = false; };
+    const cc = $('#cCreate', v);
+    if (cc) cc.onclick = async () => {
+      if (!window.crypto || !crypto.subtle) return toast(t('cloud_err_service'));
+      cc.disabled = true; cc.textContent = '⏳ ' + t('cloud_working');
       try {
-        const existed = await cloudConnect(code, pass, mode === 'create');
-        toast(existed ? '✅ ' + t('cloud_existing') : '✅ ' + t('cloud_created'));
-        state.cloudMode = null;
-        if (multi() && !loggedIn()) { render(); showLogin(); return; }
-        setTab('home');
-      } catch (e) {
-        btn.disabled = false; btn.textContent = mode === 'create' ? '☁️ ' + t('cloud_create_btn') : '🔓 ' + t('cloud_connect_btn');
-        const m = String(e && e.message);
-        err(m === 'not_found' ? 'cloud_err_notfound' : m === 'service' ? 'cloud_err_service' : 'cloud_err_network');
-      }
+        const cred = await deriveKey(newSchoolKey());
+        await cloudConnect(cred, true);
+        render(); linkModal(true);
+      } catch (e) { cc.disabled = false; cc.textContent = '☁️ ' + t('cloud_activate_btn'); toast('⚠️ ' + t(cloudErrKey(e))); }
+    };
+    $('#cJoin', v).onclick = async () => {
+      $('#cErr', v).hidden = true;
+      const key = cleanKey($('#cKey', v).value);
+      if (!key) return err('cloud_err_badkey');
+      const b = $('#cJoin', v); b.disabled = true; b.textContent = '⏳ ' + t('cloud_working');
+      try { await joinWithKey(key); afterJoin(); }
+      catch (e) { b.disabled = false; b.textContent = '🔓 ' + t('cloud_connect_btn'); err(cloudErrKey(e)); }
     };
   }
 
@@ -2211,9 +2301,10 @@
     openModal(`<h2>👋 ${t('wb_title')}</h2>
       <p class="muted" style="margin-top:-4px">${t('wb_text')}</p>
       <button class="btn block" id="wbCloud">☁️ ${t('wb_cloud')}</button>
+      <p class="legend" style="margin-top:4px">${t('wb_cloud_help')}</p>
       <button class="btn light block mt" id="wbFile">📂 ${t('wb_file')}</button>
       <button class="btn light block mt" id="wbNew">✨ ${t('wb_new')}</button>`, (m) => {
-      $('#wbCloud', m).onclick = () => { closeModal(); state.cloudMode = 'connect'; openCloud(); };
+      $('#wbCloud', m).onclick = () => { closeModal(); openCloud(); };
       $('#wbFile', m).onclick = () => { closeModal(); state.plus = 'data'; setTab('plus', true); setTimeout(() => { const b = $('#bRestore'); if (b) b.click(); }, 100); };
       $('#wbNew', m).onclick = () => closeModal();
     });
@@ -2231,6 +2322,8 @@
   render();
   lockApp();
   updSyncBtn();
-  if (cloud) setTimeout(() => syncNow(), 1200);
+  if (location.hash.includes('cle=')) setTimeout(() => handleKeyLink(), 200);
+  else if (cloud) setTimeout(() => syncNow(), 1200);
   else if (FIRST_RUN) setTimeout(() => { if ($('#lock').hidden && $('#modal').hidden) welcomeBack(); }, 300);
+  window.addEventListener('hashchange', () => { if (location.hash.includes('cle=')) handleKeyLink(); });
 })();
