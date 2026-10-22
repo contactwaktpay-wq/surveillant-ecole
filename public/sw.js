@@ -1,5 +1,5 @@
 // Service worker : permet à l'application de fonctionner sans connexion internet.
-const CACHE = 'surveillant-v7';
+const CACHE = 'surveillant-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -28,7 +28,8 @@ self.addEventListener('activate', (e) => {
 
 // Réseau d'abord (pour recevoir les mises à jour), sinon cache (hors ligne).
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.startsWith('/api/')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

@@ -8,7 +8,7 @@
 
   const I18N = window.I18N;
   const KEY = 'surveillant_data_v1';
-  const VERSION = '2.1';
+  const VERSION = '2.2';
 
   /* ---------------- Utilitaires de base ---------------- */
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -32,7 +32,7 @@
       school: DEF_SCHOOL(), settings: DEF_SETTINGS(),
       classes: I18N[lang].default_classes.map((n) => ({ id: uid(), name: n })),
       students: [], calls: {}, justifs: {}, incidents: [], exits: [], payments: {}, staff: [],
-      lastBackup: null
+      tomb: {}, clearedAt: 0, lastBackup: null
     };
   }
   // Mise à niveau des données de la version 1 (aucune perte)
@@ -42,6 +42,8 @@
     ['calls', 'justifs', 'payments'].forEach((k) => { d[k] = d[k] || {}; });
     ['incidents', 'exits', 'students', 'classes', 'staff'].forEach((k) => { d[k] = d[k] || []; });
     d.lang = d.lang || 'fr';
+    d.tomb = d.tomb && typeof d.tomb === 'object' ? d.tomb : {};
+    d.clearedAt = Number(d.clearedAt) || 0;
     if (d.attendance) {
       Object.entries(d.attendance).forEach(([date, marks]) => {
         Object.entries(marks || {}).forEach(([sid, s]) => {
@@ -60,10 +62,48 @@
     try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.classes) return migrate(d); } catch (e) { /* ignore */ }
     return freshDB((navigator.language || 'fr').startsWith('ar') ? 'ar' : 'fr');
   }
+  const FIRST_RUN = !localStorage.getItem(KEY); // téléphone neuf ou données effacées
   let db = load();
+  // Sauvegarde en ligne : identifiants de ce téléphone (voir plus bas)
+  const CLOUD_KEY = 'surveillant_cloud';
+  let cloud = null;
+  try { cloud = JSON.parse(localStorage.getItem(CLOUD_KEY)) || null; } catch (e) { cloud = null; }
+  let syncState = cloud ? 'idle' : 'off', syncing = false, changeSeq = 0, syncTimer = null, pendingRender = false;
+
+  /* ---- Suivi des modifications (pour la synchronisation entre téléphones) ----
+     Chaque enregistrement modifié reçoit un horodatage « u » ; chaque suppression laisse une trace (tomb). */
+  const ARR = ['classes', 'students', 'incidents', 'exits', 'staff'];
+  const MAPS = ['calls', 'justifs', 'payments'];
+  const ONE = ['school', 'settings'];
+  const CLEARABLE = ['calls', 'justifs', 'incidents', 'exits', 'payments'];
+  const rs = (r) => { const o = Object.assign({}, r); delete o.u; return JSON.stringify(o); };
+  let snap = null;
+  function takeSnap() {
+    snap = {};
+    ARR.forEach((c) => { snap[c] = new Map(db[c].map((r) => [r.id, rs(r)])); });
+    MAPS.forEach((c) => { snap[c] = new Map(Object.entries(db[c]).map(([k, r]) => [k, rs(r)])); });
+    ONE.forEach((c) => { snap[c] = rs(db[c]); });
+  }
+  function stamp() {
+    if (!snap) { takeSnap(); return false; }
+    const now = Date.now(); let ch = false;
+    const diff = (c, entries) => {
+      const old = snap[c], nw = new Map();
+      entries.forEach(([k, r]) => { const x = rs(r); nw.set(k, x); if (old.get(k) !== x) { r.u = now; ch = true; } });
+      old.forEach((_, k) => { if (!nw.has(k)) { db.tomb[c + ':' + k] = now; ch = true; } });
+      snap[c] = nw;
+    };
+    ARR.forEach((c) => diff(c, db[c].map((r) => [r.id, r])));
+    MAPS.forEach((c) => diff(c, Object.entries(db[c])));
+    ONE.forEach((c) => { const x = rs(db[c]); if (snap[c] !== x) { db[c].u = now; snap[c] = x; ch = true; } });
+    return ch;
+  }
+  takeSnap();
   function save() {
+    const changed = stamp();
     try { localStorage.setItem(KEY, JSON.stringify(db)); }
     catch (e) { alert(t('storage_full')); }
+    if (changed) cloudDirty();
   }
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -129,7 +169,7 @@
     $('#modal .modal-card').scrollTop = 0;
     if (onMount) onMount($('#modalBody'));
   }
-  function closeModal() { $('#modal').hidden = true; $('#modalBody').innerHTML = ''; }
+  function closeModal() { $('#modal').hidden = true; $('#modalBody').innerHTML = ''; if (pendingRender) setTimeout(() => { if (pendingRender && $('#modal').hidden) render(); }, 0); }
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal' || e.target.closest('[data-close]')) closeModal(); });
   function confirmBox(message, okLabel, onOk, danger) {
     openModal(`<h2>${esc(message)}</h2>
@@ -288,6 +328,7 @@
   $('#langBtn').addEventListener('click', () => { db.lang = db.lang === 'ar' ? 'fr' : 'ar'; save(); render(); });
 
   function render() {
+    pendingRender = false;
     applyLang();
     const v = $('#view');
     v.classList.remove('with-savebar');
@@ -312,7 +353,9 @@
     const toNotify = abs.filter((a) => !a.notified && !justifOf(key, a.st.id)).length;
     const noStudents = !db.students.length;
     const noAssigned = !isAdmin() && !VC().length;
-    const backupOld = !noStudents && (!db.lastBackup || Date.now() - new Date(db.lastBackup).getTime() > 7 * 864e5);
+    const cloudOk = cloud && cloud.last && Date.now() - cloud.last < 7 * 864e5;
+    const backupOld = !noStudents && !cloudOk && (!db.lastBackup || Date.now() - new Date(db.lastBackup).getTime() > (cloud ? 7 : 2) * 864e5);
+    const cloudHint = !noStudents && !cloud && isAdmin();
     const rate = s.P + s.A + s.R ? Math.round(((s.P + s.R) / (s.P + s.A + s.R)) * 100) : null;
 
     v.innerHTML = `
@@ -328,6 +371,7 @@
           <li><b>${t('step3')}</b><button class="btn gold small" id="homeImport">📥 ${t('import_list')}</button></li>
         </ol></div>` : ''}
       ${noAssigned ? `<div class="hint warn">${t('no_class_assigned')}</div>` : ''}
+      ${cloudHint ? `<div class="hint warn cloud-hint">☁️ ${t('cloud_hint_home')} <button class="btn small" id="goCloud">${t('activate')}</button></div>` : ''}
       ${backupOld ? `<div class="hint warn">💾 ${t('backup_reminder')} <button class="btn small" id="quickBackup">${t('backup_now')}</button></div>` : ''}
       <div class="stats">
         <div class="stat"><b>${s.total}</b><span>${t('enrolled')}</span></div>
@@ -371,6 +415,7 @@
       state.appelClass = li.dataset.gotoClass; state.appelDate = key; state.appelSes = ses; setTab('appel');
     }));
     $$('[data-go="settings"]', v).forEach((b) => (b.onclick = () => { state.plus = 'settings'; setTab('plus', true); }));
+    const gc = $('#goCloud', v); if (gc) gc.onclick = () => openCloud();
     const hd = $('#homeDiv', v); if (hd) hd.onclick = () => divisionsModal();
     const hi = $('#homeImport', v); if (hi) hi.onclick = () => importModal(db.classes[0] && db.classes[0].id);
     const qb = $('#quickBackup', v); if (qb) qb.onclick = () => doBackup(true);
@@ -952,7 +997,7 @@
       v.innerHTML = `<button class="back-btn" id="backPlus">${db.lang === 'ar' ? '→' : '←'} ${t('back')}</button><div id="plusBody"></div>`;
       $('#backPlus', v).onclick = () => { state.plus = 'menu'; render(); };
       const b = $('#plusBody', v);
-      ({ fees: renderFees, reports: renderReports, paper: renderPaper, settings: renderSettings, data: renderData, help: renderHelp })[sub](b);
+      ({ fees: renderFees, reports: renderReports, paper: renderPaper, settings: renderSettings, data: renderData, help: renderHelp, cloud: renderCloud })[sub](b);
       return;
     }
     const items = [
@@ -960,6 +1005,7 @@
       ['reports', '📊', t('reports'), t('reports_sub')],
       ['paper', '🖨️', t('paper'), t('paper_sub')],
       isAdmin() ? ['settings', '⚙️', t('settings'), t('settings_sub')] : null,
+      ['cloud', '☁️', t('cloud'), cloud ? cloudStatusText() : t('cloud_sub_off')],
       ['data', '💾', t('data'), db.lastBackup ? tf('last_backup', { d: fmtDate(db.lastBackup.slice(0, 10), false) }) : t('never_backup')],
       ['help', '📲', t('help'), t('help_sub')],
       multi() ? ['switch', '👥', t('switch_user'), tf('connected_as', { name: userName() || '' })] : null
@@ -1317,6 +1363,12 @@
         <p class="legend">${t('backup_help')}</p>
       </div>
       <div class="card">
+        <h2>☁️ ${t('cloud')}</h2>
+        <p class="muted" style="margin-top:0">${cloud ? cloudStatusText() : t('cloud_sub_off')}</p>
+        <button class="btn ${cloud ? 'light' : 'gold'} block" id="bCloud">☁️ ${cloud ? t('open') : t('activate')}</button>
+        <p class="legend">🧹 ${t('cache_tip')}</p>
+      </div>
+      <div class="card">
         <h2>🔀 ${t('merge')}</h2>
         <p class="muted" style="margin-top:0">${isAdmin() ? t('merge_help_admin') : t('merge_help_staff')}</p>
         <button class="btn light block" id="bMerge">🔀 ${t('merge_btn')}</button>
@@ -1335,6 +1387,7 @@
       </div>` : ''}`;
     $('#bShare', v).onclick = () => doBackup(true);
     $('#bDl', v).onclick = () => doBackup(false);
+    $('#bCloud', v).onclick = () => openCloud();
     $('#bMerge', v).onclick = () => $('#mergeFile', v).click();
     $('#mergeFile', v).onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
@@ -1343,7 +1396,7 @@
         try {
           const d = JSON.parse(r.result);
           if (!d || !Array.isArray(d.classes) || !Array.isArray(d.students)) throw new Error('bad');
-          const n = mergeDB(d); save(); render();
+          const n = mergeDB(d); cloudDirty(); save(); render();
           openModal(`<h2>✅ ${t('merge_done')}</h2><ul class="olist"><li>${t('tab_appel')} : <b>${n.calls}</b></li><li>${t('students_new')} : <b>${n.students}</b></li>
             <li>${t('incidents')} : <b>${n.incidents}</b></li><li>${t('exits')} : <b>${n.exits}</b></li></ul><button class="btn block" data-close>${t('close')}</button>`);
           if (!loggedIn()) showLogin();
@@ -1366,12 +1419,17 @@
       r.readAsText(f);
     };
     $('#bNewYear', v).onclick = () => confirmBox(t('new_year_confirm'), t('new_year_btn'), () => {
+      save();
       db.calls = {}; db.justifs = {}; db.incidents = []; db.exits = []; db.payments = {};
+      db.clearedAt = Date.now();
+      Object.keys(db.tomb).forEach((k) => { if (CLEARABLE.includes(k.split(':')[0])) delete db.tomb[k]; });
+      CLEARABLE.forEach((c) => { snap[c] = new Map(); });
       const y = parseInt(String(db.school.year).slice(0, 4), 10); if (y) db.school.year = `${y + 1}-${y + 2}`;
       save(); render(); toast(t('saved'));
     }, true);
     $('#bReset', v).onclick = () => confirmBox(t('reset_confirm'), t('reset_all'), () => {
-      const pin = db.settings.pin; localStorage.removeItem(KEY); db = freshDB(db.lang); db.settings.pin = pin; setUser(''); save(); setTab('home');
+      const pin = db.settings.pin; localStorage.removeItem(KEY); db = freshDB(db.lang); db.settings.pin = pin; setUser('');
+      cloud = null; saveCloud(); updSyncBtn(); takeSnap(); save(); setTab('home');
     }, true);
   }
 
@@ -1381,6 +1439,7 @@
       <div class="card"><h2>${t('install_title')}</h2>
         ${deferredPrompt ? `<button class="btn gold block" id="hInstall">📲 ${t('install')}</button>` : ''}
         <p>${isIOS ? t('install_ios') : t('install_android')}</p><p class="muted">${isIOS ? t('install_android') : t('install_ios')}</p></div>
+      <div class="card"><h2>🧹 ${t('cache_title')}</h2><p style="margin-top:0">${t('cache_tip')}</p></div>
       <div class="card"><h2>${t('howto')}</h2><ol class="olist">${[1, 2, 3, 4, 5, 6].map((i) => `<li>${t('howto_' + i)}</li>`).join('')}</ol></div>
       <p class="center muted small">${t('app')} · ${t('version')} ${VERSION}</p>`;
     const hi = $('#hInstall', v); if (hi) hi.onclick = () => $('#installBtn').click();
@@ -1487,7 +1546,7 @@
         <h3>🔑 ${t('admin_pin')}</h3>
         ${S.adminPin ? `<p class="muted" style="margin-top:0">${t('admin_pin_on')}</p>` : `<div class="hint warn">${t('admin_pin_warn')}</div>`}
         <button class="btn light block" id="sAdminPin">${S.adminPin ? t('pin_change') : t('admin_pin_set')}</button>
-        <div class="steps-box mt"><b>📲 ${t('distribute_title')}</b><ol class="olist">${[1, 2, 3, 4].map((i) => `<li>${t('distribute_' + i)}</li>`).join('')}</ol></div>
+        <div class="steps-box mt"><b>📲 ${t('distribute_title')}</b><p style="margin:6px 0">☁️ ${t('distribute_cloud')}</p><ol class="olist">${[1, 2, 3, 4].map((i) => `<li>${t('distribute_' + i)}</li>`).join('')}</ol></div>
       </div></div>`;
   }
   function bindStaffCard(v, collect) {
@@ -1547,26 +1606,49 @@
 
   /* ---------- Fusion des sauvegardes (travail des surveillants → directeur) ---------- */
   function mergeDB(inc) {
-    inc = migrate(inc);
-    const n = { calls: 0, students: 0, incidents: 0, exits: 0, other: 0 };
-    inc.classes.forEach((c) => { if (!classById(c.id)) { db.classes.push(c); n.other++; } });
-    inc.students.forEach((x) => { if (!studentById(x.id)) { db.students.push(x); n.students++; } });
-    const rank = (c) => (c ? (c.status === 'saved' ? 2 : 1) : 0);
-    Object.entries(inc.calls).forEach(([k, c]) => {
-      const l = db.calls[k];
-      const better = !l || rank(c) > rank(l) || (rank(c) === rank(l) && c.status === 'saved' && (c.ts || '') > (l.ts || ''));
-      if (better && Object.keys(c.marks || {}).length) { db.calls[k] = c; n.calls++; }
-      else if (l && c.notified) { l.notified = Object.assign({}, c.notified, l.notified); }
+    inc = migrate(JSON.parse(JSON.stringify(inc)));
+    const n = { calls: 0, students: 0, incidents: 0, exits: 0, other: 0, changed: false };
+    const tomb = Object.assign({}, db.tomb);
+    Object.entries(inc.tomb).forEach(([k, v]) => { if (!(tomb[k] >= v)) tomb[k] = v; });
+    const cleared = Math.max(db.clearedAt || 0, inc.clearedAt || 0);
+    const alive = (c, k, r) => {
+      const tb = tomb[c + ':' + k];
+      if (tb && (r.u || 0) <= tb) return false;
+      if (cleared && CLEARABLE.includes(c) && (r.u || 0) < cleared) return false;
+      return true;
+    };
+    const take = (l, r) => { Object.keys(l).forEach((k) => delete l[k]); Object.assign(l, r); };
+    const bump = (c, isNew) => {
+      n.changed = true;
+      if (c === 'calls') n.calls++; else if (c === 'students' && isNew) n.students++;
+      else if (c === 'incidents' && isNew) n.incidents++; else if (c === 'exits' && isNew) n.exits++; else n.other++;
+    };
+    ARR.forEach((c) => {
+      const map = new Map(db[c].map((r) => [r.id, r]));
+      inc[c].forEach((r) => {
+        if (!r || !r.id || !alive(c, r.id, r)) return;
+        const l = map.get(r.id);
+        if (!l) { db[c].push(r); map.set(r.id, r); bump(c, true); }
+        else if ((r.u || 0) > (l.u || 0)) { take(l, r); bump(c, false); }
+      });
+      const before = db[c].length; db[c] = db[c].filter((r) => alive(c, r.id, r)); if (db[c].length !== before) n.changed = true;
     });
-    Object.entries(inc.justifs).forEach(([k, j]) => { const l = db.justifs[k]; if (!l || (j.at || '') > (l.at || '')) { db.justifs[k] = j; n.other++; } });
-    const ids = (arr) => new Set(arr.map((x) => x.id));
-    const iSet = ids(db.incidents); inc.incidents.forEach((x) => { if (!iSet.has(x.id)) { db.incidents.push(x); n.incidents++; } });
-    const eSet = ids(db.exits); inc.exits.forEach((x) => { if (!eSet.has(x.id)) { db.exits.push(x); n.exits++; } });
-    Object.entries(inc.payments).forEach(([k, p]) => { if (!db.payments[k]) { db.payments[k] = p; n.other++; } });
-    if (!db.staff.length && inc.staff.length) { db.staff = inc.staff; db.settings.multi = inc.settings.multi; db.settings.adminPin = inc.settings.adminPin; }
-    sortClasses();
+    MAPS.forEach((c) => {
+      Object.entries(inc[c]).forEach(([k, r]) => {
+        if (!r || typeof r !== 'object' || !alive(c, k, r)) return;
+        const l = db[c][k];
+        if (!l) { db[c][k] = r; bump(c, true); }
+        else if ((r.u || 0) > (l.u || 0)) { take(l, r); bump(c, false); }
+        else if (c === 'calls' && !r.u && !l.u && r.status === 'saved' && l.status !== 'saved' && Object.keys(r.marks || {}).length) { take(l, r); bump(c, false); }
+      });
+      Object.keys(db[c]).forEach((k) => { if (!alive(c, k, db[c][k])) { delete db[c][k]; n.changed = true; } });
+    });
+    ONE.forEach((c) => { if ((inc[c].u || 0) > (db[c].u || 0)) { take(db[c], inc[c]); n.changed = true; } });
+    db.tomb = tomb; db.clearedAt = cleared;
+    sortClasses(); takeSnap();
     return n;
   }
+
 
   function lockApp() {
     if (multi()) {
@@ -1595,6 +1677,7 @@
   }
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && cloud) setTimeout(() => syncNow(), 800);
     if (document.hidden) hiddenAt = Date.now();
     else if ((db.settings.pin || multi()) && hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) lockApp();
   });
@@ -1910,8 +1993,244 @@
   }
 
 
+  /* =========================================================
+     ☁️ Sauvegarde en ligne (chiffrée) + synchronisation
+     ========================================================= */
+  function saveCloud() { if (cloud) localStorage.setItem(CLOUD_KEY, JSON.stringify(cloud)); else localStorage.removeItem(CLOUD_KEY); }
+  function cloudDirty() {
+    if (!cloud) return;
+    changeSeq++;
+    if (!cloud.dirty) { cloud.dirty = true; saveCloud(); }
+    clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 4000);
+  }
+  const te = new TextEncoder(), td = new TextDecoder();
+  const b64 = (u8) => { let x = ''; for (let i = 0; i < u8.length; i += 0x8000) x += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(x); };
+  const unb64 = (str) => { const bin = atob(str); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+  const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, '0')).join('');
+  const normCode = (c) => String(c || '').trim().toLowerCase().replace(/\s+/g, '-');
+  async function deriveCloud(code, pass) {
+    const base = await crypto.subtle.importKey('raw', te.encode(pass), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: te.encode('surveillant-ecole|' + normCode(code)), iterations: 150000, hash: 'SHA-256' }, base, 512));
+    return { id: hex(bits.slice(32)), k: b64(bits.slice(0, 32)) };
+  }
+  async function gzip(u8, compress) {
+    const S = compress ? window.CompressionStream : window.DecompressionStream;
+    if (!S) return null;
+    const out = new Response(new Blob([u8]).stream().pipeThrough(new S('gzip')));
+    return new Uint8Array(await out.arrayBuffer());
+  }
+  async function encryptData(obj, k) {
+    let raw = te.encode(JSON.stringify(obj)), flag = 0;
+    try { const z = await gzip(raw, true); if (z) { raw = z; flag = 1; } } catch (e) { /* sans compression */ }
+    const key = await crypto.subtle.importKey('raw', unb64(k), 'AES-GCM', false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, raw));
+    const out = new Uint8Array(13 + ct.length); out[0] = flag; out.set(iv, 1); out.set(ct, 13);
+    return b64(out);
+  }
+  async function decryptData(str, k) {
+    const u = unb64(str);
+    const key = await crypto.subtle.importKey('raw', unb64(k), 'AES-GCM', false, ['decrypt']);
+    let raw = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: u.slice(1, 13) }, key, u.slice(13)));
+    if (u[0] === 1) raw = await gzip(raw, false);
+    return JSON.parse(td.decode(raw));
+  }
+  async function api(method, params, body) {
+    const r = await fetch('/api/sync' + (params ? '?' + new URLSearchParams(params) : ''), {
+      method, cache: 'no-store', headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined
+    });
+    let j = null; try { j = await r.json(); } catch (e) { j = null; }
+    return { status: r.status, j };
+  }
+  function cloudPayload() { const d = Object.assign({}, db); delete d.lang; delete d.lastBackup; return d; }
+  const pristine = () => !db.students.length && !Object.keys(db.calls).length && !db.incidents.length && !db.exits.length && !db.staff.length;
+
+  function cloudStatusText() {
+    if (!cloud) return t('cloud_sub_off');
+    const st = { busy: t('cloud_state_busy'), error: t('cloud_state_error'), offline: t('cloud_state_offline') }[syncState];
+    if (st) return st;
+    if (!cloud.last) return t('cloud_never');
+    const d = new Date(cloud.last);
+    const when = dateKey(d) === dateKey() ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : fmtDate(dateKey(d), false) + ' ' + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return (cloud.dirty ? '⏳ ' : '✅ ') + tf('cloud_last', { d: when });
+  }
+  function updSyncBtn() {
+    const b = $('#syncBtn'); if (!b) return;
+    b.hidden = !cloud;
+    const s = !cloud ? 'off' : syncState === 'idle' ? (cloud.dirty ? 'busy' : 'ok') : syncState;
+    b.dataset.s = s;
+    b.title = cloudStatusText();
+    const el = $('#cloudStatus'); if (el) el.textContent = cloudStatusText();
+  }
+  function setSync(s) { syncState = s; updSyncBtn(); }
+  function afterRemoteChange() {
+    if (multi() && !loggedIn()) { render(); showLogin(); return; }
+    const ae = document.activeElement;
+    const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && $('#view').contains(ae);
+    if (!$('#modal').hidden || typing) pendingRender = true; else render();
+  }
+  async function syncNow() {
+    if (!cloud) return false;
+    if (syncing) return false;
+    if (!navigator.onLine) { setSync('offline'); return false; }
+    syncing = true; setSync('busy');
+    let ok = false, merged = false;
+    try {
+      for (let i = 0; i < 4 && cloud; i++) {
+        const meta = await api('GET', { id: cloud.id, meta: '1' });
+        let remoteVer;
+        if (meta.status === 200 && meta.j) remoteVer = meta.j.version;
+        else if (meta.status === 404 && meta.j && meta.j.error === 'not_found') remoteVer = 0;
+        else throw new Error('net ' + meta.status);
+        if (remoteVer && remoteVer !== cloud.ver) {
+          const g = await api('GET', { id: cloud.id });
+          if (g.status !== 200 || !g.j) throw new Error('net');
+          const n = mergeDB(await decryptData(g.j.data, cloud.k));
+          if (n.changed) { merged = true; save(); }
+          remoteVer = g.j.version; cloud.ver = remoteVer; saveCloud();
+        }
+        if (remoteVer === 0) cloud.dirty = true;
+        if (!cloud.dirty) { ok = true; break; }
+        const seq = changeSeq;
+        const data = await encryptData(cloudPayload(), cloud.k);
+        const p = await api('PUT', null, { id: cloud.id, base: remoteVer, data });
+        if (p.status === 409) continue;
+        if (p.status !== 200 || !p.j) throw new Error('put ' + p.status);
+        cloud.ver = p.j.version; if (changeSeq === seq) cloud.dirty = false;
+        ok = true; break;
+      }
+    } catch (e) { console.warn('sync', e); }
+    if (cloud && ok) cloud.last = Date.now();
+    saveCloud(); syncing = false;
+    setSync(ok ? 'idle' : navigator.onLine ? 'error' : 'offline');
+    if (merged) afterRemoteChange();
+    else if (tab === 'plus' && (state.plus === 'menu') && $('#modal').hidden) render();
+    if (ok && cloud && cloud.dirty) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 1500); }
+    return ok;
+  }
+  async function cloudConnect(code, pass, create) {
+    const cred = await deriveCloud(code, pass);
+    let meta;
+    try { meta = await api('GET', { id: cred.id, meta: '1' }); } catch (e) { throw new Error('network'); }
+    if (meta.status !== 200 && !(meta.status === 404 && meta.j && meta.j.error === 'not_found')) throw new Error(meta.j ? 'network' : 'service');
+    const exists = meta.status === 200;
+    if (!exists && !create) throw new Error('not_found');
+    const c = { code: normCode(code), id: cred.id, k: cred.k, ver: 0, dirty: true, last: 0 };
+    if (exists) {
+      const g = await api('GET', { id: cred.id });
+      if (g.status !== 200 || !g.j) throw new Error('network');
+      const inc = await decryptData(g.j.data, cred.k);
+      if (pristine()) {
+        const lang = db.lang; db = migrate(inc); db.lang = lang; db.lastBackup = null; takeSnap();
+        c.dirty = false; setUser('');
+      } else { mergeDB(inc); c.dirty = true; }
+      c.ver = g.j.version;
+    }
+    cloud = c; saveCloud();
+    localStorage.setItem(KEY, JSON.stringify(db));
+    await syncNow();
+    return exists;
+  }
+  function openCloud() { state.plus = 'cloud'; setTab('plus', true); window.scrollTo(0, 0); }
+
+  function renderCloud(v) {
+    if (cloud) {
+      v.innerHTML = `<h2 class="page-title">☁️ ${t('cloud')}</h2>
+        <div class="card">
+          <h2>✅ ${t('cloud_on_title')}</h2>
+          <p class="cloud-status" id="cloudStatus">${esc(cloudStatusText())}</p>
+          <p>${t('cloud_code')} : <b class="code-pill">${esc(cloud.code)}</b></p>
+          <button class="btn block" id="cSync">🔄 ${t('cloud_sync_now')}</button>
+          <p class="legend">${t('cloud_auto')}</p>
+        </div>
+        <div class="card">
+          <h2>📲 ${t('cloud_other_title')}</h2>
+          <ol class="olist">${[1, 2, 3].map((i) => `<li>${t('cloud_other_' + i)}</li>`).join('')}</ol>
+          <button class="btn light block" id="cShare">💬 ${t('cloud_share')}</button>
+        </div>
+        <div class="card">
+          <p class="muted" style="margin-top:0">🔐 ${t('cloud_privacy')}</p>
+          <p class="legend">🧹 ${t('cache_tip')}</p>
+          <button class="btn danger block" id="cOff">${t('cloud_off_btn')}</button>
+          <p class="legend">${t('cloud_off_help')}</p>
+        </div>`;
+      $('#cSync', v).onclick = async () => { const ok = await syncNow(); toast(ok ? '✅ ' + t('cloud_synced') : '⚠️ ' + t('cloud_state_error')); if (tab === 'plus' && state.plus === 'cloud') render(); };
+      $('#cShare', v).onclick = () => shareText(tf('cloud_share_msg', { url: location.origin, code: cloud.code, school: db.school.name || '' }));
+      $('#cOff', v).onclick = () => confirmBox(t('cloud_off_confirm'), t('cloud_off_btn'), () => { cloud = null; saveCloud(); setSync('off'); render(); }, true);
+      return;
+    }
+    const canCreate = isAdmin();
+    if (!canCreate) state.cloudMode = 'connect';
+    if (!state.cloudMode) state.cloudMode = pristine() ? 'connect' : 'create';
+    const mode = state.cloudMode;
+    const suggest = (normCode(db.school.name).replace(/[^a-z0-9\u0600-\u06ff-]/g, '').slice(0, 18) || 'ecole') + '-' + Math.floor(1000 + Math.random() * 9000);
+    v.innerHTML = `<h2 class="page-title">☁️ ${t('cloud')}</h2>
+      <div class="card">
+        <p style="margin-top:0">${t('cloud_intro')}</p>
+        <ul class="olist ticks">${[1, 2, 3, 4].map((i) => `<li>${t('cloud_p' + i)}</li>`).join('')}</ul>
+      </div>
+      <div class="card">
+        ${canCreate ? `<div class="seg-ctl"><button class="${mode === 'connect' ? 'on' : ''}" data-cm="connect">${t('cloud_have_code')}</button><button class="${mode === 'create' ? 'on' : ''}" data-cm="create">${t('cloud_create')}</button></div>` : ''}
+        <label>${t('cloud_code')}</label>
+        <input id="cCode" autocapitalize="none" autocomplete="username" spellcheck="false" value="${mode === 'create' ? esc(suggest) : ''}" placeholder="${t('cloud_code_ph')}">
+        <p class="legend" style="margin-top:4px">${mode === 'create' ? t('cloud_code_help') : t('cloud_code_help2')}</p>
+        <label>${t('cloud_pass')}</label>
+        <input id="cPass" type="password" autocomplete="${mode === 'create' ? 'new-password' : 'current-password'}">
+        ${mode === 'create' ? `<label>${t('cloud_pass2')}</label><input id="cPass2" type="password" autocomplete="new-password">
+          <div class="hint warn mt">🔑 ${t('cloud_pass_warn')}</div>` : ''}
+        <label class="switch mt"><input type="checkbox" id="cShow"> <span>${t('show_pass')}</span></label>
+        <button class="btn block mt" id="cGo">${mode === 'create' ? '☁️ ' + t('cloud_create_btn') : '🔓 ' + t('cloud_connect_btn')}</button>
+        <p class="pin-err cloud-err" id="cErr" hidden></p>
+      </div>
+      <p class="legend center">🧹 ${t('cache_tip')}</p>`;
+    $$('[data-cm]', v).forEach((b) => (b.onclick = () => { state.cloudMode = b.dataset.cm; render(); }));
+    $('#cShow', v).onchange = (e) => $$('input[type=password], input[data-pw]', v).forEach((i) => { i.type = e.target.checked ? 'text' : 'password'; i.dataset.pw = '1'; });
+    $('#cGo', v).onclick = async () => {
+      const err = (k) => { const el = $('#cErr', v); el.textContent = t(k); el.hidden = false; };
+      $('#cErr', v).hidden = true;
+      const code = $('#cCode', v).value, pass = $('#cPass', v).value;
+      if (normCode(code).length < 4 || pass.length < 6) return err('cloud_err_short');
+      if (mode === 'create' && pass !== $('#cPass2', v).value) return err('cloud_err_match');
+      if (!window.crypto || !crypto.subtle) return err('cloud_err_service');
+      const btn = $('#cGo', v); btn.disabled = true; btn.textContent = '⏳ ' + t('cloud_working');
+      try {
+        const existed = await cloudConnect(code, pass, mode === 'create');
+        toast(existed ? '✅ ' + t('cloud_existing') : '✅ ' + t('cloud_created'));
+        state.cloudMode = null;
+        if (multi() && !loggedIn()) { render(); showLogin(); return; }
+        setTab('home');
+      } catch (e) {
+        btn.disabled = false; btn.textContent = mode === 'create' ? '☁️ ' + t('cloud_create_btn') : '🔓 ' + t('cloud_connect_btn');
+        const m = String(e && e.message);
+        err(m === 'not_found' ? 'cloud_err_notfound' : m === 'service' ? 'cloud_err_service' : 'cloud_err_network');
+      }
+    };
+  }
+
+  function welcomeBack() {
+    openModal(`<h2>👋 ${t('wb_title')}</h2>
+      <p class="muted" style="margin-top:-4px">${t('wb_text')}</p>
+      <button class="btn block" id="wbCloud">☁️ ${t('wb_cloud')}</button>
+      <button class="btn light block mt" id="wbFile">📂 ${t('wb_file')}</button>
+      <button class="btn light block mt" id="wbNew">✨ ${t('wb_new')}</button>`, (m) => {
+      $('#wbCloud', m).onclick = () => { closeModal(); state.cloudMode = 'connect'; openCloud(); };
+      $('#wbFile', m).onclick = () => { closeModal(); state.plus = 'data'; setTab('plus', true); setTimeout(() => { const b = $('#bRestore'); if (b) b.click(); }, 100); };
+      $('#wbNew', m).onclick = () => closeModal();
+    });
+  }
+
+  $('#syncBtn').addEventListener('click', () => openCloud());
+  window.addEventListener('online', () => { if (cloud) syncNow(); });
+  window.addEventListener('offline', () => { if (cloud) setSync('offline'); });
+  setInterval(() => { if (cloud && !document.hidden) syncNow(); }, 90 * 1000);
+  // Demande au navigateur de protéger les données (évite l'effacement automatique)
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then((p) => { if (!p) navigator.storage.persist(); }); } catch (e) { /* ignore */ }
+
   /* ---------------- Démarrage ---------------- */
   save();
   render();
   lockApp();
+  updSyncBtn();
+  if (cloud) setTimeout(() => syncNow(), 1200);
+  else if (FIRST_RUN) setTimeout(() => { if ($('#lock').hidden && $('#modal').hidden) welcomeBack(); }, 300);
 })();

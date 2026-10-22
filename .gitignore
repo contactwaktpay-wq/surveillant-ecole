@@ -1,2 +1,4 @@
 .DS_Store
 *.png.tmp
+node_modules/
+.netlify/

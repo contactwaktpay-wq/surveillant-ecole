@@ -18,7 +18,11 @@ Toutes les données restent sur le téléphone du surveillant.
   (les autres sont cachées partout : appel, élèves, rapports, exports). Écran « Qui utilise ce téléphone ? », code personnel facultatif,
   code de la direction. Un téléphone par surveillant : la direction envoie la sauvegarde → le surveillant la restaure et choisit son nom →
   le soir il renvoie sa sauvegarde → la direction clique **« Fusionner »** (appels, incidents, sorties, paiements ajoutés sans rien effacer).
+- ☁️ **Sauvegarde en ligne** (v2.2) : code école + mot de passe, données **chiffrées sur le téléphone** (AES-GCM) avant l'envoi,
+  synchronisation automatique entre téléphones (direction + surveillants), fonctionne hors ligne. Après un vidage du cache ou sur un
+  nouveau téléphone : « Récupérer les données ». Stockage : Netlify Functions + Netlify Blobs (`netlify/functions/sync.mjs`).
 - 🔒 **Code PIN**, 💾 sauvegarde partageable (WhatsApp) et restauration, nouvelle année scolaire.
 
 ## Déploiement
-Site statique sans compilation. Netlify : build vide, dossier publié `.` (voir `netlify.toml`).
+Site statique sans compilation dans `public/`. Netlify : dossier publié `public`, fonction `netlify/functions/sync.mjs` (dépendance `@netlify/blobs`, installée automatiquement par Netlify grâce à `package.json`). Voir `netlify.toml`.
+Test local : `netlify dev`.
