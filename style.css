@@ -312,6 +312,25 @@ textarea { min-height: 80px; resize: vertical; }
 .keypad button:active { background: rgba(255,255,255,.32); }
 .keypad button.ghost { background: transparent; }
 
+/* v2.1 plusieurs surveillants */
+.user-btn { border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; padding: 6px 11px; font-size: 13.5px; font-weight: 700; font-family: inherit; cursor: pointer; max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.user-btn[hidden] { display: none; }
+.lock { overflow-y: auto; }
+.lock-box.login { max-width: 380px; padding-top: 28px; padding-bottom: 28px; }
+.lock-sub { margin: -10px 0 14px; opacity: .85; }
+.login-list { display: flex; flex-direction: column; gap: 10px; text-align: start; }
+.login-list button { display: flex; flex-direction: column; gap: 3px; border: 0; border-radius: 14px; background: #fff; color: var(--text); padding: 13px 15px; font-family: inherit; font-size: 16px; cursor: pointer; text-align: start; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.login-list button small { color: var(--muted); font-size: 13px; }
+.login-list button.admin { background: rgba(255,255,255,.14); color: #fff; border: 1.5px dashed rgba(255,255,255,.6); box-shadow: none; }
+.login-list button.admin small { color: rgba(255,255,255,.85); }
+.login-list button:active { transform: scale(.98); }
+.lock-link, .lock-lang { margin-top: 18px; background: transparent; border: 1.5px solid rgba(255,255,255,.55); color: #fff; border-radius: 999px; padding: 9px 18px; font-family: inherit; font-size: 14.5px; cursor: pointer; }
+.lock-link + .lock-link { margin-inline-start: 8px; }
+.steps-box { background: #eef7f1; border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+.chip .owner { font-weight: 400; opacity: .8; }
+#staffCard h3 { margin: 18px 0 8px; font-size: 15.5px; }
+#staffCard .hint.warn { display: block; }
+
 /* impression */
 .print-area { display: none; }
 @media print {

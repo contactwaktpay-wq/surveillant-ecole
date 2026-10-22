@@ -14,6 +14,10 @@ Toutes les données restent sur le téléphone du surveillant.
 - 💰 **Mensualités** (optionnel) : payés / non payés par mois, encaissé, reste, relance WhatsApp.
 - 📊 **Rapports** : rapport du jour (WhatsApp / PDF), rapport mensuel (taux de présence, élèves les plus absents), exports Excel.
 - 🖨️ **Fiches d'appel papier** de secours (semaine, toutes classes).
+- 👥 **Plusieurs surveillants** (v2.1) : la direction attribue des classes à chaque surveillant ; chacun ne voit **que ses classes**
+  (les autres sont cachées partout : appel, élèves, rapports, exports). Écran « Qui utilise ce téléphone ? », code personnel facultatif,
+  code de la direction. Un téléphone par surveillant : la direction envoie la sauvegarde → le surveillant la restaure et choisit son nom →
+  le soir il renvoie sa sauvegarde → la direction clique **« Fusionner »** (appels, incidents, sorties, paiements ajoutés sans rien effacer).
 - 🔒 **Code PIN**, 💾 sauvegarde partageable (WhatsApp) et restauration, nouvelle année scolaire.
 
 ## Déploiement

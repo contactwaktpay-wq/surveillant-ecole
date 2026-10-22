@@ -8,7 +8,7 @@
 
   const I18N = window.I18N;
   const KEY = 'surveillant_data_v1';
-  const VERSION = '2.0';
+  const VERSION = '2.1';
 
   /* ---------------- Utilitaires de base ---------------- */
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -24,14 +24,14 @@
     return `${y}-${y + 1}`;
   }
   const DEF_SCHOOL = () => ({ name: '', supervisor: '', phone: '', year: defaultYear() });
-  const DEF_SETTINGS = () => ({ sessions: 1, fees: false, feeAmount: 0, startMonth: 10, pin: null, msgLang: 'both' });
+  const DEF_SETTINGS = () => ({ sessions: 1, fees: false, feeAmount: 0, startMonth: 10, pin: null, msgLang: 'both', multi: false, adminPin: null });
 
   function freshDB(lang) {
     return {
       v: 2, lang,
       school: DEF_SCHOOL(), settings: DEF_SETTINGS(),
       classes: I18N[lang].default_classes.map((n) => ({ id: uid(), name: n })),
-      students: [], calls: {}, justifs: {}, incidents: [], exits: [], payments: {},
+      students: [], calls: {}, justifs: {}, incidents: [], exits: [], payments: {}, staff: [],
       lastBackup: null
     };
   }
@@ -40,7 +40,7 @@
     d.school = Object.assign(DEF_SCHOOL(), d.school || {});
     d.settings = Object.assign(DEF_SETTINGS(), d.settings || {});
     ['calls', 'justifs', 'payments'].forEach((k) => { d[k] = d[k] || {}; });
-    ['incidents', 'exits', 'students', 'classes'].forEach((k) => { d[k] = d[k] || []; });
+    ['incidents', 'exits', 'students', 'classes', 'staff'].forEach((k) => { d[k] = d[k] || []; });
     d.lang = d.lang || 'fr';
     if (d.attendance) {
       Object.entries(d.attendance).forEach(([date, marks]) => {
@@ -89,6 +89,25 @@
   const studentById = (id) => db.students.find((s) => s.id === id);
   const studentsOf = (cid) => db.students.filter((s) => s.classId === cid).sort(byName);
   const className = (st) => { const c = st && classById(st.classId); return c ? c.name : ''; };
+  /* ---------- Plusieurs surveillants : utilisateur courant & classes visibles ---------- */
+  const CUR_KEY = 'surveillant_user';
+  let currentUser = localStorage.getItem(CUR_KEY) || '';
+  const multi = () => !!db.settings.multi && db.staff.length > 0;
+  const me = () => (multi() ? db.staff.find((x) => x.id === currentUser) || null : null);
+  const isAdmin = () => !multi() || currentUser === 'admin';
+  const loggedIn = () => !multi() || currentUser === 'admin' || !!me();
+  function visibleClasses() {
+    if (isAdmin()) return db.classes;
+    const m = me(); if (!m) return [];
+    return db.classes.filter((c) => m.classIds.includes(c.id));
+  }
+  const VC = visibleClasses;
+  const visSet = () => new Set(VC().map((c) => c.id));
+  const canSee = (st) => !!st && (isAdmin() || visSet().has(st.classId));
+  const canSeeId = (sid) => canSee(studentById(sid));
+  const visStudents = () => (isAdmin() ? db.students : db.students.filter((x) => visSet().has(x.classId)));
+  const userName = () => { const m = me(); return m ? m.name : multi() && currentUser === 'admin' ? (db.school.supervisor || t('admin')) : db.school.supervisor; };
+
   const cleanPhone = (p) => String(p || '').replace(/[^\d+]/g, '');
   function waPhone(p) {
     let n = cleanPhone(p).replace(/^\+/, '').replace(/^00/, '');
@@ -146,7 +165,7 @@
 
   function dayStats(date, ses) {
     const res = { total: 0, P: 0, A: 0, R: 0, saved: 0, classesWithStudents: 0, perClass: [] };
-    db.classes.forEach((c) => {
+    VC().forEach((c) => {
       const st = studentsOf(c.id);
       const call = getCall(date, ses, c.id);
       const pc = { cls: c, total: st.length, P: 0, A: 0, R: 0, marked: 0, call, absents: [], lates: [] };
@@ -168,7 +187,7 @@
     const map = new Map();
     callsOfDate(date).forEach((c) => Object.entries(c.marks).forEach(([sid, v]) => {
       if (v !== 'A') return;
-      const st = studentById(sid); if (!st) return;
+      const st = studentById(sid); if (!canSee(st)) return;
       const e = map.get(sid) || { st, sessions: [], notified: false, calls: [] };
       e.sessions.push(c.session); e.calls.push(c);
       if (c.notified && c.notified[sid]) e.notified = true;
@@ -202,8 +221,9 @@
     const cn = className(st);
     const schFr = db.school.name ? `l'école ${db.school.name}` : "l'école";
     const schAr = db.school.name ? `مدرسة ${db.school.name}` : 'المدرسة';
-    const sigFr = db.school.supervisor ? `\n— ${db.school.supervisor}, surveillant` : '';
-    const sigAr = db.school.supervisor ? `\n— ${db.school.supervisor}، المراقب` : '';
+    const un = userName();
+    const sigFr = un ? `\n— ${un}, surveillant` : '';
+    const sigAr = un ? `\n— ${un}، المراقب` : '';
     const wFr = x.date ? whenText(x.date, x.session, 'fr') : '';
     const wAr = x.date ? whenText(x.date, x.session, 'ar') : '';
     let fr = '', ar = '';
@@ -261,6 +281,8 @@
     $('#schoolName').textContent = db.school.name ? db.school.name + (db.school.year ? ' · ' + db.school.year : '') : t('app_sub');
     $('#langBtn').textContent = db.lang === 'ar' ? 'FR' : 'ع';
     $('#installBtn').textContent = t('install');
+    const ub = $('#userBtn');
+    if (multi() && loggedIn()) { ub.hidden = false; ub.textContent = '👤 ' + (me() ? me().name.split(' ')[0] : t('admin_short')); } else ub.hidden = true;
     $$('[data-t]').forEach((el) => (el.textContent = t(el.dataset.t)));
   }
   $('#langBtn').addEventListener('click', () => { db.lang = db.lang === 'ar' ? 'fr' : 'ar'; save(); render(); });
@@ -273,7 +295,7 @@
   }
   const sesChips = (cur, attr) => (db.settings.sessions === 2
     ? `<div class="seg-ctl">${sessionsList().map((s) => `<button class="${s === cur ? 'on' : ''}" ${attr}="${s}">${sesLabel(s)}</button>`).join('')}</div>` : '');
-  const studentOptions = (selected) => db.classes.map((c) => {
+  const studentOptions = (selected) => VC().map((c) => {
     const st = studentsOf(c.id); if (!st.length) return '';
     return `<optgroup label="${esc(c.name)}">${st.map((s) => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</optgroup>`;
   }).join('');
@@ -284,11 +306,12 @@
     if (!sessionsList().includes(state.homeSes)) state.homeSes = currentSession();
     const ses = state.homeSes;
     const s = dayStats(key, ses);
-    const incToday = db.incidents.filter((i) => i.date === key).length;
-    const exitsToday = db.exits.filter((i) => i.date === key).length;
+    const incToday = db.incidents.filter((i) => i.date === key && canSeeId(i.studentId)).length;
+    const exitsToday = db.exits.filter((i) => i.date === key && canSeeId(i.studentId)).length;
     const abs = absentsOfDate(key);
     const toNotify = abs.filter((a) => !a.notified && !justifOf(key, a.st.id)).length;
     const noStudents = !db.students.length;
+    const noAssigned = !isAdmin() && !VC().length;
     const backupOld = !noStudents && (!db.lastBackup || Date.now() - new Date(db.lastBackup).getTime() > 7 * 864e5);
     const rate = s.P + s.A + s.R ? Math.round(((s.P + s.R) / (s.P + s.A + s.R)) * 100) : null;
 
@@ -297,13 +320,14 @@
         <p class="date-line">${esc(fmtDate(key))}</p>
         ${sesChips(ses, 'data-hses')}
       </div>
-      ${noStudents ? `<div class="card setup">
+      ${noStudents && isAdmin() ? `<div class="card setup">
         <h2>👋 ${t('welcome_title')}</h2>
         <ol class="steps">
           <li><b>${t('step1')}</b><button class="btn light small" data-go="settings">${t('open')}</button></li>
           <li><b>${t('step2')}</b><button class="btn light small" id="homeDiv">🏫 ${t('divisions_btn')}</button></li>
           <li><b>${t('step3')}</b><button class="btn gold small" id="homeImport">📥 ${t('import_list')}</button></li>
         </ol></div>` : ''}
+      ${noAssigned ? `<div class="hint warn">${t('no_class_assigned')}</div>` : ''}
       ${backupOld ? `<div class="hint warn">💾 ${t('backup_reminder')} <button class="btn small" id="quickBackup">${t('backup_now')}</button></div>` : ''}
       <div class="stats">
         <div class="stat"><b>${s.total}</b><span>${t('enrolled')}</span></div>
@@ -321,7 +345,7 @@
         <div class="card-head"><h2>${t('today_calls')}${db.settings.sessions === 2 ? ' · ' + sesLabel(ses) : ''}</h2>
           <span class="badge ${s.saved && s.saved === s.classesWithStudents ? 'ok' : 'no'}">${s.saved}/${s.classesWithStudents}</span></div>
         <div class="progress"><i style="width:${s.classesWithStudents ? Math.round((s.saved / s.classesWithStudents) * 100) : 0}%"></i></div>
-        ${db.classes.length ? `<ul class="list">${s.perClass.map((p) => {
+        ${VC().length ? `<ul class="list">${s.perClass.map((p) => {
           const st = !p.total ? 'empty' : p.call && p.call.status === 'saved' ? 'saved' : p.call && Object.keys(p.call.marks).length ? 'draft' : 'todo';
           const badge = { saved: `<span class="badge ok">✓ ${p.call && p.call.savedAt ? esc(p.call.savedAt) : t('saved_short')}</span>`, draft: `<span class="badge no">${t('draft')}</span>`, todo: `<span class="badge grey">${t('todo')}</span>`, empty: '' }[st];
           return `<li data-goto-class="${p.cls.id}" class="tap"><div class="grow"><b>${esc(p.cls.name)}</b>
@@ -364,8 +388,9 @@
 
   /* ======================= APPEL ======================= */
   function renderAppel(v) {
-    if (!db.classes.length) { v.innerHTML = `<div class="card"><p class="empty">${t('no_class')}</p></div>`; return; }
-    if (!classById(state.appelClass)) state.appelClass = (db.classes.find((c) => studentsOf(c.id).length) || db.classes[0]).id;
+    const vc = VC();
+    if (!vc.length) { v.innerHTML = `<div class="card"><p class="empty">${isAdmin() ? t('no_class') : t('no_class_assigned')}</p></div>`; return; }
+    if (!vc.find((c) => c.id === state.appelClass)) state.appelClass = (vc.find((c) => studentsOf(c.id).length) || vc[0]).id;
     if (!sessionsList().includes(state.appelSes)) state.appelSes = currentSession();
     const cid = state.appelClass, date = state.appelDate, ses = state.appelSes;
     const st = studentsOf(cid);
@@ -377,12 +402,12 @@
     st.forEach((s) => { if (marks[s.id]) cnt[marks[s.id]]++; });
     const unmarked = st.length - cnt.P - cnt.A - cnt.R;
     const lbl = { P: t('st_P'), A: t('st_A'), R: t('st_R') };
-    const idx = db.classes.findIndex((c) => c.id === cid);
-    const nextCls = db.classes.slice(idx + 1).find((c) => studentsOf(c.id).length && !(getCall(date, ses, c.id) || {}).savedAt);
+    const idx = vc.findIndex((c) => c.id === cid);
+    const nextCls = vc.slice(idx + 1).find((c) => studentsOf(c.id).length && !(getCall(date, ses, c.id) || {}).savedAt);
 
     let body = '';
     if (!st.length) {
-      body = `<div class="card"><p class="empty">${t('no_student')}</p><button class="btn gold block" id="goImport">📥 ${t('import_list')}</button></div>`;
+      body = `<div class="card"><p class="empty">${t('no_student')}</p>${isAdmin() ? `<button class="btn gold block" id="goImport">📥 ${t('import_list')}</button>` : ''}</div>`;
     } else if (saved) {
       const absents = st.filter((s) => marks[s.id] === 'A');
       const lates = st.filter((s) => marks[s.id] === 'R');
@@ -441,7 +466,7 @@
       <div class="card appel-filters">
         <div class="row2">
           <div><label>${t('class')}</label>
-            <select id="clsSel">${db.classes.map((c) => {
+            <select id="clsSel">${vc.map((c) => {
               const cc = getCall(date, ses, c.id);
               const mark = cc && cc.status === 'saved' ? '✓ ' : cc && Object.keys(cc.marks).length ? '✎ ' : '';
               return `<option value="${c.id}" ${c.id === cid ? 'selected' : ''}>${mark}${esc(c.name)} (${studentsOf(c.id).length})</option>`;
@@ -493,7 +518,7 @@
       const k = c();
       const missing = st.filter((s) => !k.marks[s.id]);
       const doSave = () => {
-        k.status = 'saved'; k.savedAt = timeNow(); k.by = db.school.supervisor || ''; delete k.prev;
+        k.status = 'saved'; k.savedAt = timeNow(); k.ts = new Date().toISOString(); k.by = userName() || ''; delete k.prev;
         save(); toast('✅ ' + t('call_saved'));
         render(); window.scrollTo(0, 0);
       };
@@ -622,7 +647,7 @@
     });
   }
   function incidentModal(inc, presetSid) {
-    if (!db.students.length) { toast(t('no_student_any')); return; }
+    if (!visStudents().length) { toast(t('no_student_any')); return; }
     const i = inc || { studentId: presetSid || '', type: 'bagarre', note: '', action: 'avertissement', date: dateKey(), time: timeNow(), witness: '' };
     openModal(`<h2>⚠️ ${inc ? t('edit') : t('new_incident')}</h2>
       <label>${t('student')} *</label>
@@ -650,11 +675,11 @@
     });
   }
   function renderIncidents(v) {
-    const list = db.incidents.filter((i) => inRange(i.date, state.incFilter)).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    const list = db.incidents.filter((i) => canSeeId(i.studentId) && inRange(i.date, state.incFilter)).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     v.innerHTML = `
       <button class="btn block" id="addInc">➕ ${t('new_incident')}</button>
       <div class="card mt">
-        ${filterChips(state.incFilter, 'data-f', db.incidents.length)}
+        ${filterChips(state.incFilter, 'data-f', db.incidents.filter((i) => canSeeId(i.studentId)).length)}
         ${list.length ? list.map(incidentItem).join('') : `<p class="empty">${t('no_incident')}</p>`}
       </div>`;
     $('#addInc', v).onclick = () => incidentModal();
@@ -664,7 +689,7 @@
 
   // ----- Sorties anticipées -----
   function exitModal(ex, presetSid) {
-    if (!db.students.length) { toast(t('no_student_any')); return; }
+    if (!visStudents().length) { toast(t('no_student_any')); return; }
     const e = ex || { studentId: presetSid || '', date: dateKey(), time: timeNow(), reason: 'malade', by: '', relation: 'pere', phone: '', note: '' };
     openModal(`<h2>🚪 ${ex ? t('edit') : t('new_exit')}</h2>
       <label>${t('student')} *</label>
@@ -707,11 +732,11 @@
     </div>`;
   }
   function renderExits(v) {
-    const list = db.exits.filter((i) => inRange(i.date, state.exitFilter)).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    const list = db.exits.filter((i) => canSeeId(i.studentId) && inRange(i.date, state.exitFilter)).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     v.innerHTML = `
       <button class="btn block" id="addEx">➕ ${t('new_exit')}</button>
       <div class="card mt">
-        ${filterChips(state.exitFilter, 'data-f', db.exits.length)}
+        ${filterChips(state.exitFilter, 'data-f', db.exits.filter((i) => canSeeId(i.studentId)).length)}
         ${list.length ? list.map(exitItem).join('') : `<p class="empty">${t('no_exit')}</p>`}
       </div>`;
     $('#addEx', v).onclick = () => exitModal();
@@ -731,7 +756,7 @@
       Object.entries(c.marks).forEach(([sid, val]) => {
         const k = c.date + '|' + sid;
         if (val !== 'A' || seen.has(k) || justifOf(c.date, sid)) return;
-        const st = studentById(sid); if (!st) return;
+        const st = studentById(sid); if (!canSee(st)) return;
         seen.add(k); rows.push({ st, date: c.date, ses: c.session });
       });
     });
@@ -763,21 +788,24 @@
 
   /* ======================= ÉLÈVES ======================= */
   function renderEleves(v) {
-    if (db.classes.length && !classById(state.elevesClass)) state.elevesClass = db.classes[0].id;
+    const vc = VC();
+    if (vc.length && !vc.find((c) => c.id === state.elevesClass)) state.elevesClass = vc[0].id;
+    if (!vc.length) state.elevesClass = null;
     const cid = state.elevesClass;
     const q = state.search.trim().toLowerCase();
-    const list = q ? db.students.filter((s) => s.name.toLowerCase().includes(q) || cleanPhone(s.phone).includes(q)).sort(byName) : (cid ? studentsOf(cid) : []);
+    const list = q ? visStudents().filter((s) => s.name.toLowerCase().includes(q) || cleanPhone(s.phone).includes(q)).sort(byName) : (cid ? studentsOf(cid) : []);
     const cls = classById(cid);
     v.innerHTML = `
       <div class="card">
-        <div class="card-head"><h2>${t('classes')} <span class="muted">(${db.students.length} ${t('students_l')})</span></h2>
-          <div class="nowrap"><button class="btn gold small" id="divBtn">🏫 ${t('divisions_btn')}</button> <button class="btn light small" id="addClass">${t('add_class')}</button></div></div>
-        <div class="chips wrap">${db.classes.map((c) => `<button class="chip ${c.id === cid && !q ? 'on' : ''}" data-c="${c.id}">${esc(c.name)} · ${studentsOf(c.id).length}</button>`).join('')}</div>
+        <div class="card-head"><h2>${isAdmin() ? t('classes') : t('my_classes')} <span class="muted">(${visStudents().length} ${t('students_l')})</span></h2>
+          ${isAdmin() ? `<div class="nowrap"><button class="btn gold small" id="divBtn">🏫 ${t('divisions_btn')}</button> <button class="btn light small" id="addClass">${t('add_class')}</button></div>` : ''}</div>
+        ${!vc.length ? `<p class="empty">${t('no_class_assigned')}</p>` : ''}
+        <div class="chips wrap">${vc.map((c) => `<button class="chip ${c.id === cid && !q ? 'on' : ''}" data-c="${c.id}">${esc(c.name)} · ${studentsOf(c.id).length}</button>`).join('')}</div>
       </div>
       <div class="card">
         <input type="search" id="search" placeholder="${t('search')}" value="${esc(state.search)}">
-        ${!q ? `<div class="card-head mt"><h2 style="margin:0">${cls ? esc(cls.name) : ''}</h2>${cls ? `<button class="btn light small" id="editClass">✏️ ${t('rename')}</button>` : ''}</div>
-          <div class="btn-row mt">${cid ? `<button class="btn small" id="addStudent">➕ ${t('add_student')}</button>` : ''}<button class="btn gold small" id="bulkAdd">📥 ${t('import_list')}</button></div>` : ''}
+        ${!q ? `<div class="card-head mt"><h2 style="margin:0">${cls ? esc(cls.name) : ''}</h2>${cls && isAdmin() ? `<button class="btn light small" id="editClass">✏️ ${t('rename')}</button>` : ''}</div>
+          <div class="btn-row mt">${cid ? `<button class="btn small" id="addStudent">➕ ${t('add_student')}</button>` : ''}${isAdmin() ? `<button class="btn gold small" id="bulkAdd">📥 ${t('import_list')}</button>` : ''}</div>` : ''}
         <ul class="list mt" id="stuList">${listHtml(list, !!q)}</ul>
       </div>`;
     $$('[data-c]', v).forEach((b) => (b.onclick = () => { state.elevesClass = b.dataset.c; state.search = ''; render(); }));
@@ -786,11 +814,11 @@
       state.search = e.target.value;
       if (wasEmpty !== !state.search.trim()) { render(); const n = $('#search'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); return; }
       const qq = state.search.trim().toLowerCase();
-      const l2 = qq ? db.students.filter((s) => s.name.toLowerCase().includes(qq) || cleanPhone(s.phone).includes(qq)).sort(byName) : studentsOf(cid);
+      const l2 = qq ? visStudents().filter((s) => s.name.toLowerCase().includes(qq) || cleanPhone(s.phone).includes(qq)).sort(byName) : studentsOf(cid);
       $('#stuList', v).innerHTML = listHtml(l2, !!qq); bindList();
     };
-    $('#addClass', v).onclick = () => classModal();
-    $('#divBtn', v).onclick = () => divisionsModal();
+    const acb = $('#addClass', v); if (acb) acb.onclick = () => classModal();
+    const dvb = $('#divBtn', v); if (dvb) dvb.onclick = () => divisionsModal();
     const ec = $('#editClass', v); if (ec) ec.onclick = () => classModal(cls);
     const as = $('#addStudent', v); if (as) as.onclick = () => studentModal(null, cid);
     const ba = $('#bulkAdd', v); if (ba) ba.onclick = () => importModal(cid);
@@ -798,7 +826,7 @@
     bindList();
   }
   function listHtml(list, showClass) {
-    if (!list.length) return `<p class="empty">${db.classes.length ? t('no_student') : t('no_class')}</p>`;
+    if (!list.length) return `<p class="empty">${VC().length ? t('no_student') : isAdmin() ? t('no_class') : t('no_class_assigned')}</p>`;
     return list.map((s, i) => {
       const c = studentCounters(s.id);
       return `<li data-sid="${s.id}" class="tap"><span class="num">${i + 1}</span><div class="grow"><b>${esc(s.name)}</b>${s.sex ? ` <span class="sex ${s.sex}">${s.sex === 'F' ? '♀' : '♂'}</span>` : ''}
@@ -842,7 +870,7 @@
       <label>${t('student_name')} *</label><input id="stName" value="${esc(s.name)}" autocomplete="off">
       <div class="row2">
         <div><label>${t('sex')}</label><select id="stSex"><option value="">—</option><option value="G" ${s.sex === 'G' ? 'selected' : ''}>${t('boy')}</option><option value="F" ${s.sex === 'F' ? 'selected' : ''}>${t('girl')}</option></select></div>
-        <div><label>${t('class')}</label><select id="stClass">${db.classes.map((c) => `<option value="${c.id}" ${c.id === s.classId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+        <div><label>${t('class')}</label><select id="stClass">${VC().map((c) => `<option value="${c.id}" ${c.id === s.classId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
       </div>
       <label>${t('parent_name')}</label><input id="stParent" value="${esc(s.parent || '')}">
       <div class="row2">
@@ -907,13 +935,13 @@
         <a class="btn light" target="_blank" rel="noopener" href="${esc(waLink(ph, buildMsg('convoc', st, {})))}">📨 ${t('convoc')}</a>
         <button class="btn light" id="editSt">✏️ ${t('edit')}</button>
       </div>
-      <div class="btn-row mt"><button class="btn danger" id="delSt">🗑️ ${t('delete')}</button><button class="btn light" data-close>${t('close')}</button></div>`, (m) => {
+      <div class="btn-row mt">${isAdmin() ? `<button class="btn danger" id="delSt">🗑️ ${t('delete')}</button>` : ''}<button class="btn light" data-close>${t('close')}</button></div>`, (m) => {
       bindIncidentItems(m);
       $$('[data-eid]', m).forEach((el) => { const b = $('[data-edit-ex]', el); if (b) b.onclick = () => exitModal(db.exits.find((x) => x.id === el.dataset.eid)); const d = $('[data-del-ex]', el); if (d) d.remove(); });
       $('#editSt', m).onclick = () => studentModal(st);
       $('#dInc', m).onclick = () => incidentModal(null, sid);
       $('#dExit', m).onclick = () => exitModal(null, sid);
-      $('#delSt', m).onclick = () => confirmBox(t('delete_student_confirm'), t('delete'), () => { purgeStudent(sid); save(); render(); }, true);
+      const dsb = $('#delSt', m); if (dsb) dsb.onclick = () => confirmBox(t('delete_student_confirm'), t('delete'), () => { purgeStudent(sid); save(); render(); }, true);
     });
   }
 
@@ -931,14 +959,15 @@
       db.settings.fees ? ['fees', '💰', t('fees'), t('fees_sub')] : null,
       ['reports', '📊', t('reports'), t('reports_sub')],
       ['paper', '🖨️', t('paper'), t('paper_sub')],
-      ['settings', '⚙️', t('settings'), t('settings_sub')],
+      isAdmin() ? ['settings', '⚙️', t('settings'), t('settings_sub')] : null,
       ['data', '💾', t('data'), db.lastBackup ? tf('last_backup', { d: fmtDate(db.lastBackup.slice(0, 10), false) }) : t('never_backup')],
-      ['help', '📲', t('help'), t('help_sub')]
+      ['help', '📲', t('help'), t('help_sub')],
+      multi() ? ['switch', '👥', t('switch_user'), tf('connected_as', { name: userName() || '' })] : null
     ].filter(Boolean);
     v.innerHTML = `<div class="card menu">${items.map(([id, ic, ti, su]) => `<button class="menu-item" data-p="${id}"><span class="mi-ico">${ic}</span><span class="grow"><b>${ti}</b><small>${esc(su)}</small></span><span class="muted chev">›</span></button>`).join('')}</div>
-      ${!db.settings.fees ? `<p class="legend center">${t('fees_off_hint')}</p>` : ''}
+      ${!db.settings.fees && isAdmin() ? `<p class="legend center">${t('fees_off_hint')}</p>` : ''}
       <p class="center muted small">${t('app')} · ${t('version')} ${VERSION}</p>`;
-    $$('[data-p]', v).forEach((b) => (b.onclick = () => { state.plus = b.dataset.p; render(); window.scrollTo(0, 0); }));
+    $$('[data-p]', v).forEach((b) => (b.onclick = () => { if (b.dataset.p === 'switch') { logout(); return; } state.plus = b.dataset.p; render(); window.scrollTo(0, 0); }));
   }
 
   // ----- Mensualités -----
@@ -954,7 +983,8 @@
     const months = schoolMonths();
     if (!months.includes(state.feeMonth)) state.feeMonth = months.includes(monthKey()) ? monthKey() : months[0];
     const mk = state.feeMonth;
-    const pool = (state.feeClass === 'all' ? db.students.slice().sort((a, b) => (className(a) + a.name).localeCompare(className(b) + b.name)) : studentsOf(state.feeClass));
+    if (state.feeClass !== 'all' && !VC().find((c) => c.id === state.feeClass)) state.feeClass = 'all';
+    const pool = (state.feeClass === 'all' ? visStudents().slice().sort((a, b) => (className(a) + a.name).localeCompare(className(b) + b.name)) : studentsOf(state.feeClass));
     let paidN = 0, collected = 0, expected = 0;
     pool.forEach((s) => { const p = db.payments[s.id + '|' + mk]; expected += feeOf(s); if (p) { paidN++; collected += Number(p.amount) || 0; } });
     const list = pool.filter((s) => { const p = db.payments[s.id + '|' + mk]; return state.feeFilter === 'all' || (state.feeFilter === 'paid' ? p : !p); });
@@ -963,7 +993,7 @@
       <div class="card">
         <div class="row2">
           <div><label>${t('month')}</label><select id="fMonth">${months.map((m) => `<option value="${m}" ${m === mk ? 'selected' : ''}>${esc(fmtMonth(m))}</option>`).join('')}</select></div>
-          <div><label>${t('class')}</label><select id="fClass"><option value="all">${t('all_classes')}</option>${db.classes.map((c) => `<option value="${c.id}" ${c.id === state.feeClass ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+          <div><label>${t('class')}</label><select id="fClass"><option value="all">${t('all_classes')}</option>${VC().map((c) => `<option value="${c.id}" ${c.id === state.feeClass ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
         </div>
         <div class="stats s3 mt">
           <div class="stat"><b>${paidN}/${pool.length}</b><span>${t('paid')}</span></div>
@@ -980,7 +1010,7 @@
           return `<div class="person-row" data-fs="${s.id}"><div class="grow"><b>${esc(s.name)}</b><div class="sub">${state.feeClass === 'all' ? esc(className(s)) + ' · ' : ''}${fmtMoney(p ? p.amount : feeOf(s))}${p ? ' · ' + esc(fmtDate(p.date, false)) : ''}</div></div>
             ${!p ? `<a class="cbtn wa" target="_blank" rel="noopener" href="${esc(waLink(s.phone || s.phone2, buildMsg('fee', s, { month: mk, amount: feeOf(s) })))}" title="${t('remind')}">💬</a>` : ''}
             <button class="pay-btn ${p ? 'paid' : ''}" data-pay="${s.id}">${p ? '✓ ' + t('paid_one') : t('mark_paid')}</button></div>`;
-        }).join('') : `<p class="empty">${db.students.length ? t('nothing_here') : t('no_student_any')}</p>`}
+        }).join('') : `<p class="empty">${visStudents().length ? t('nothing_here') : t('no_student_any')}</p>`}
       </div>
       <button class="btn light block" id="feeCsv">📊 ${t('export_fees')}</button>`;
     $('#fMonth', v).onchange = (e) => { state.feeMonth = e.target.value; render(); };
@@ -1001,7 +1031,7 @@
     }));
     $('#feeCsv', v).onclick = () => {
       const rows = [[t('class'), t('student'), t('parent_phone'), ...months.map((m) => fmtMonth(m))]];
-      db.classes.forEach((c) => studentsOf(c.id).forEach((s) => rows.push([c.name, s.name, s.phone, ...months.map((m) => { const p = db.payments[s.id + '|' + m]; return p ? p.amount : ''; })])));
+      VC().forEach((c) => studentsOf(c.id).forEach((s) => rows.push([c.name, s.name, s.phone, ...months.map((m) => { const p = db.payments[s.id + '|' + m]; return p ? p.amount : ''; })])));
       csvDownload(`mensualites_${dateKey()}.csv`, rows);
     };
   }
@@ -1009,7 +1039,7 @@
   // ----- Rapports -----
   function monthStats(ym) {
     const per = {}; const stu = {};
-    db.classes.forEach((c) => (per[c.id] = { cls: c, P: 0, A: 0, R: 0, days: new Set() }));
+    VC().forEach((c) => (per[c.id] = { cls: c, P: 0, A: 0, R: 0, days: new Set() }));
     Object.values(db.calls).forEach((c) => {
       if (!c.date.startsWith(ym) || !per[c.classId]) return;
       const pc = per[c.classId]; pc.days.add(c.date);
@@ -1021,11 +1051,11 @@
         if (v === 'R') s.R++;
       });
     });
-    const inc = db.incidents.filter((i) => i.date.startsWith(ym));
+    const inc = db.incidents.filter((i) => i.date.startsWith(ym) && canSeeId(i.studentId));
     const incBy = {}; inc.forEach((i) => (incBy[i.type] = (incBy[i.type] || 0) + 1));
     const top = Object.entries(stu).filter(([, s]) => s.A).sort((a, b) => b[1].A - a[1].A).slice(0, 10).map(([sid, s]) => ({ st: studentById(sid), ...s }));
     const lateTop = Object.entries(stu).filter(([, s]) => s.R).sort((a, b) => b[1].R - a[1].R).slice(0, 5).map(([sid, s]) => ({ st: studentById(sid), ...s }));
-    return { per: Object.values(per).filter((p) => studentsOf(p.cls.id).length), inc, incBy, top, lateTop, exits: db.exits.filter((e) => e.date.startsWith(ym)).length };
+    return { per: Object.values(per).filter((p) => studentsOf(p.cls.id).length), inc, incBy, top, lateTop, exits: db.exits.filter((e) => e.date.startsWith(ym) && canSeeId(e.studentId)).length };
   }
   const pct = (p) => { const n = p.P + p.A + p.R; return n ? Math.round(((p.P + p.R) / n) * 100) + '%' : '—'; };
   function renderReports(v) {
@@ -1062,7 +1092,8 @@
     $('#xAtt', v).onclick = () => {
       const names = { P: t('st_P_long'), A: t('st_A_long'), R: t('st_R_long') };
       const rows = [[t('date'), t('session'), t('class'), t('student'), t('status'), t('arrival_time'), t('justified')]];
-      Object.values(db.calls).sort((a, b) => (a.date + a.session).localeCompare(b.date + b.session)).forEach((c) => {
+      const vs = visSet();
+      Object.values(db.calls).filter((c) => vs.has(c.classId)).sort((a, b) => (a.date + a.session).localeCompare(b.date + b.session)).forEach((c) => {
         const cl = classById(c.classId);
         Object.entries(c.marks).forEach(([sid, s]) => {
           const st = studentById(sid); if (!st) return;
@@ -1074,7 +1105,7 @@
     };
     $('#xInc', v).onclick = () => {
       const rows = [[t('date'), t('time'), t('class'), t('student'), t('type'), t('note'), t('action'), t('witness')]];
-      db.incidents.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).forEach((i) => {
+      db.incidents.filter((i) => canSeeId(i.studentId)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).forEach((i) => {
         const st = studentById(i.studentId);
         rows.push([i.date, i.time, className(st), st ? st.name : '', t('inc_' + i.type), i.note, t('act_' + i.action), i.witness || '']);
       });
@@ -1082,7 +1113,7 @@
     };
     $('#xExit', v).onclick = () => {
       const rows = [[t('date'), t('exit_time'), t('class'), t('student'), t('motif'), t('picked_by'), t('relation'), t('phone'), t('note')]];
-      db.exits.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).forEach((e) => {
+      db.exits.filter((e) => canSeeId(e.studentId)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).forEach((e) => {
         const st = studentById(e.studentId);
         rows.push([e.date, e.time, className(st), st ? st.name : '', t('exr_' + e.reason), e.by, t('rel_' + e.relation), e.phone, e.note]);
       });
@@ -1090,7 +1121,7 @@
     };
     $('#xStu', v).onclick = () => {
       const rows = [['Classe', 'Nom', 'Sexe', 'Parent', 'Téléphone', 'Téléphone 2', 'Santé']];
-      db.classes.forEach((c) => studentsOf(c.id).forEach((s) => rows.push([c.name, s.name, s.sex, s.parent, s.phone, s.phone2, s.health])));
+      VC().forEach((c) => studentsOf(c.id).forEach((s) => rows.push([c.name, s.name, s.sex, s.parent, s.phone, s.phone2, s.health])));
       csvDownload(`liste_eleves_${dateKey()}.csv`, rows);
     };
   }
@@ -1112,13 +1143,13 @@
         if (p.lates.length) L.push(`   ⏰ ${p.lates.map((x) => x.name + (p.call.late[x.id] ? ' ' + p.call.late[x.id] : '')).join(', ')}`);
       });
     });
-    const inc = db.incidents.filter((i) => i.date === date);
+    const inc = db.incidents.filter((i) => i.date === date && canSeeId(i.studentId));
     L.push(''); L.push(`⚠️ *${t('incidents')}* (${inc.length})`);
     if (!inc.length) L.push(`• ${t('none')}`);
     inc.forEach((i) => { const st = studentById(i.studentId); L.push(`• ${i.time} – ${st ? st.name : '?'} (${className(st)}) : ${t('inc_' + i.type)}${i.note ? ' – ' + i.note : ''}${i.action && i.action !== 'aucune' ? ' → ' + t('act_' + i.action) : ''}`); });
-    const ex = db.exits.filter((e) => e.date === date);
+    const ex = db.exits.filter((e) => e.date === date && canSeeId(e.studentId));
     if (ex.length) { L.push(''); L.push(`🚪 *${t('exits')}* (${ex.length})`); ex.forEach((e) => { const st = studentById(e.studentId); L.push(`• ${e.time} – ${st ? st.name : '?'} (${className(st)}) : ${t('exr_' + e.reason)} · ${e.by} (${t('rel_' + e.relation)})`); }); }
-    if (db.school.supervisor) { L.push(''); L.push(`${t('supervisor_l')} : ${db.school.supervisor}`); }
+    if (userName()) { L.push(''); L.push(`${t('supervisor_l')} : ${userName()}${me() ? ' (' + VC().map((c) => c.name).join(', ') + ')' : ''}`); }
     return L.join('\n');
   }
   function buildClassReport(call) {
@@ -1143,7 +1174,7 @@
     const area = $('#printArea');
     area.innerHTML = `<div class="p-head"><div><h1>${esc(db.school.name || t('app'))}</h1><div>${esc(db.school.year || '')}${db.school.phone ? ' · ☎ ' + esc(db.school.phone) : ''}</div></div>
       <div class="p-title">${esc(title)}</div></div>${inner}
-      <div class="p-foot"><span>${t('supervisor_l')} : ${esc(db.school.supervisor || '..................')}</span><span>${t('signature')} : ..................</span><span>${t('director_sig')} : ..................</span></div>`;
+      <div class="p-foot"><span>${t('supervisor_l')} : ${esc(userName() || '..................')}</span><span>${t('signature')} : ..................</span><span>${t('director_sig')} : ..................</span></div>`;
     document.body.classList.add('printing');
     setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('printing'), 500); }, 100);
   }
@@ -1157,10 +1188,10 @@
         ${s.perClass.filter((p) => p.total).map((p) => `<tr><td>${esc(p.cls.name)}</td><td>${p.total}</td><td>${p.marked ? p.P + p.R : '—'}</td><td>${p.marked ? p.A : '—'}</td><td>${p.marked ? p.R : '—'}</td>
           <td>${p.marked ? p.absents.map((x) => esc(x.name) + (justifOf(date, x.id) ? ' (J)' : '')).join(', ') : t('call_not_done')}</td></tr>`).join('')}</tbody></table>`;
     });
-    const inc = db.incidents.filter((i) => i.date === date);
+    const inc = db.incidents.filter((i) => i.date === date && canSeeId(i.studentId));
     if (inc.length) inner += `<h2>${t('incidents')}</h2><table><thead><tr><th>${t('time')}</th><th>${t('student')}</th><th>${t('class')}</th><th>${t('type')}</th><th>${t('note')}</th><th>${t('action')}</th></tr></thead><tbody>
       ${inc.map((i) => { const st = studentById(i.studentId); return `<tr><td>${esc(i.time)}</td><td>${esc(st ? st.name : '')}</td><td>${esc(className(st))}</td><td>${t('inc_' + i.type)}</td><td>${esc(i.note)}</td><td>${t('act_' + i.action)}</td></tr>`; }).join('')}</tbody></table>`;
-    const ex = db.exits.filter((e) => e.date === date);
+    const ex = db.exits.filter((e) => e.date === date && canSeeId(e.studentId));
     if (ex.length) inner += `<h2>${t('exits')}</h2><table><thead><tr><th>${t('exit_time')}</th><th>${t('student')}</th><th>${t('class')}</th><th>${t('motif')}</th><th>${t('picked_by')}</th></tr></thead><tbody>
       ${ex.map((e) => { const st = studentById(e.studentId); return `<tr><td>${esc(e.time)}</td><td>${esc(st ? st.name : '')}</td><td>${esc(className(st))}</td><td>${t('exr_' + e.reason)}</td><td>${esc(e.by)} (${t('rel_' + e.relation)})</td></tr>`; }).join('')}</tbody></table>`;
     printDoc(t('daily_report'), inner);
@@ -1181,12 +1212,12 @@
     v.innerHTML = `<h2 class="page-title">🖨️ ${t('paper')}</h2>
       <div class="card"><p class="muted" style="margin-top:0">${t('paper_help')}</p>
         <label>${t('week_of')}</label><input type="date" id="pWeek" value="${mon}">
-        <label>${t('class')}</label><select id="pClass"><option value="all">${t('all_classes')}</option>${db.classes.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+        <label>${t('class')}</label><select id="pClass"><option value="all">${t('all_classes')}</option>${VC().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
         <button class="btn block mt" id="pGo">🖨️ ${t('print_pdf')}</button></div>`;
     $('#pGo', v).onclick = () => {
       const start = $('#pWeek', v).value || mon;
       const days = [0, 1, 2, 3, 4].map((i) => addDays(start, i));
-      const cls = $('#pClass', v).value === 'all' ? db.classes.filter((c) => studentsOf(c.id).length) : [classById($('#pClass', v).value)];
+      const cls = $('#pClass', v).value === 'all' ? VC().filter((c) => studentsOf(c.id).length) : [classById($('#pClass', v).value)];
       const sub = db.settings.sessions === 2 ? ['M', 'S'] : [''];
       const inner = cls.map((c) => `<div class="p-page"><h2>${esc(c.name)} — ${t('week_of')} ${esc(fmtDate(start, false))}</h2>
         <table class="grid"><thead><tr><th rowspan="${sub.length > 1 ? 2 : 1}">N°</th><th rowspan="${sub.length > 1 ? 2 : 1}">${t('student')}</th>${days.map((d) => `<th colspan="${sub.length}">${esc(fmtDate(d, false))}</th>`).join('')}</tr>
@@ -1218,6 +1249,7 @@
         <div class="seg-ctl"><button class="${S.sessions === 1 ? 'on' : ''}" data-ses="1">${t('one_session')}</button><button class="${S.sessions === 2 ? 'on' : ''}" data-ses="2">${t('two_sessions')}</button></div>
         <button class="btn light block mt" id="sDiv">🏫 ${t('divisions_title')}</button>
       </div>
+      ${staffCardHtml()}
       <div class="card">
         <h2>💬 ${t('messages')}</h2>
         <label>${t('msg_lang')}</label>
@@ -1234,11 +1266,11 @@
           </div>
         </div>
       </div>
-      <div class="card">
+      ${!S.multi ? `<div class="card">
         <h2>🔒 ${t('security')}</h2>
         <p class="muted" style="margin-top:0">${S.pin ? t('pin_on') : t('pin_off')}</p>
         <div class="btn-row"><button class="btn light" id="sPin">${S.pin ? t('pin_change') : t('pin_set')}</button>${S.pin ? `<button class="btn danger" id="sPinOff">${t('pin_remove')}</button>` : ''}</div>
-      </div>
+      </div>` : ''}
       <button class="btn block save-settings" id="sSave">💾 ${t('save')}</button>`;
     const collect = () => {
       db.school.name = $('#sName', v).value.trim(); db.school.year = $('#sYear', v).value.trim() || defaultYear();
@@ -1255,7 +1287,8 @@
       const demo = { id: 'x', name: db.lang === 'ar' ? 'محمد أحمد' : 'Mohamed Ahmed', sex: 'G', classId: (db.classes[0] || {}).id };
       openModal(`<h2>👁 ${t('preview')}</h2><pre class="msg-prev">${esc(buildMsg('absent', demo, { date: dateKey(), session: currentSession() }))}</pre><button class="btn light block" data-close>${t('close')}</button>`);
     };
-    $('#sPin', v).onclick = () => pinSetup();
+    const spb = $('#sPin', v); if (spb) spb.onclick = () => pinSetup((h) => { db.settings.pin = h; });
+    bindStaffCard(v, collect);
     const po = $('#sPinOff', v); if (po) po.onclick = () => confirmBox(t('pin_remove') + ' ?', t('pin_remove'), () => { S.pin = null; save(); render(); }, true);
     $('#sSave', v).onclick = () => { collect(); save(); render(); toast(t('saved')); };
   }
@@ -1284,6 +1317,12 @@
         <p class="legend">${t('backup_help')}</p>
       </div>
       <div class="card">
+        <h2>🔀 ${t('merge')}</h2>
+        <p class="muted" style="margin-top:0">${isAdmin() ? t('merge_help_admin') : t('merge_help_staff')}</p>
+        <button class="btn light block" id="bMerge">🔀 ${t('merge_btn')}</button>
+        <input type="file" id="mergeFile" accept=".json,application/json" hidden>
+      </div>
+      ${isAdmin() ? `<div class="card">
         <button class="btn light block" id="bRestore">⬆️ ${t('restore')}</button>
         <input type="file" id="restoreFile" accept=".json,application/json" hidden>
         <p class="legend">${t('restore_help')}</p>
@@ -1293,9 +1332,26 @@
         <p class="muted" style="margin-top:0">${t('new_year_help')}</p>
         <button class="btn light block" id="bNewYear">🔄 ${t('new_year_btn')}</button>
         <button class="btn danger block mt" id="bReset">🗑️ ${t('reset_all')}</button>
-      </div>`;
+      </div>` : ''}`;
     $('#bShare', v).onclick = () => doBackup(true);
     $('#bDl', v).onclick = () => doBackup(false);
+    $('#bMerge', v).onclick = () => $('#mergeFile', v).click();
+    $('#mergeFile', v).onchange = (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          const d = JSON.parse(r.result);
+          if (!d || !Array.isArray(d.classes) || !Array.isArray(d.students)) throw new Error('bad');
+          const n = mergeDB(d); save(); render();
+          openModal(`<h2>✅ ${t('merge_done')}</h2><ul class="olist"><li>${t('tab_appel')} : <b>${n.calls}</b></li><li>${t('students_new')} : <b>${n.students}</b></li>
+            <li>${t('incidents')} : <b>${n.incidents}</b></li><li>${t('exits')} : <b>${n.exits}</b></li></ul><button class="btn block" data-close>${t('close')}</button>`);
+          if (!loggedIn()) showLogin();
+        } catch (err) { toast(t('bad_file')); }
+      };
+      r.readAsText(f); e.target.value = '';
+    };
+    if (!isAdmin()) return;
     $('#bRestore', v).onclick = () => $('#restoreFile', v).click();
     $('#restoreFile', v).onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
@@ -1304,7 +1360,7 @@
         try {
           const d = JSON.parse(r.result);
           if (!d || !Array.isArray(d.classes) || !Array.isArray(d.students)) throw new Error('bad');
-          confirmBox(tf('restore_confirm', { n: d.students.length }), t('restore'), () => { db = migrate(d); save(); render(); toast(t('restored')); });
+          confirmBox(tf('restore_confirm', { n: d.students.length }), t('restore'), () => { db = migrate(d); save(); if (multi()) setUser(''); render(); toast(t('restored')); if (!loggedIn()) showLogin(); });
         } catch (err) { toast(t('bad_file')); }
       };
       r.readAsText(f);
@@ -1315,7 +1371,7 @@
       save(); render(); toast(t('saved'));
     }, true);
     $('#bReset', v).onclick = () => confirmBox(t('reset_confirm'), t('reset_all'), () => {
-      const pin = db.settings.pin; localStorage.removeItem(KEY); db = freshDB(db.lang); db.settings.pin = pin; save(); setTab('home');
+      const pin = db.settings.pin; localStorage.removeItem(KEY); db = freshDB(db.lang); db.settings.pin = pin; setUser(''); save(); setTab('home');
     }, true);
   }
 
@@ -1350,16 +1406,19 @@
     }
     let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0; return 'h' + h;
   }
-  function pinPad(title, onDone) {
+  function pinPad(title, onDone, opts = {}) {
     const el = $('#lock');
     let val = '';
     el.innerHTML = `<div class="lock-box"><img src="icons/icon-192.png" alt="" class="lock-logo"><h2>${esc(title)}</h2>
       <div class="pin-dots">${[0, 1, 2, 3].map(() => '<i></i>').join('')}</div><p class="pin-err" hidden></p>
-      <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map((k) => `<button ${k === '' ? 'disabled class="ghost"' : ''} data-k="${k}">${k}</button>`).join('')}</div></div>`;
+      <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map((k) => `<button ${k === '' ? 'disabled class="ghost"' : ''} data-k="${k}">${k}</button>`).join('')}</div>
+      ${opts.switchUser ? `<button class="lock-link" data-switch>👥 ${t('switch_user')}</button>` : ''}${opts.cancel ? `<button class="lock-link" data-cancel>${t('cancel')}</button>` : ''}</div>`;
     el.hidden = false;
     const dots = $$('.pin-dots i', el);
     const upd = () => dots.forEach((d, i) => d.classList.toggle('on', i < val.length));
     el.onclick = async (e) => {
+      if (e.target.closest('[data-switch]')) { showLogin(); return; }
+      if (e.target.closest('[data-cancel]')) { hideLock(); return; }
       const b = e.target.closest('[data-k]'); if (!b || b.disabled) return;
       const k = b.dataset.k;
       if (k === '⌫') val = val.slice(0, -1); else if (val.length < 4) val += k;
@@ -1370,28 +1429,174 @@
       }
     };
   }
+  function hideLock() { const el = $('#lock'); el.hidden = true; el.innerHTML = ''; el.onclick = null; }
+  function setUser(id) {
+    currentUser = id || '';
+    if (currentUser) localStorage.setItem(CUR_KEY, currentUser); else localStorage.removeItem(CUR_KEY);
+    state.appelClass = null; state.elevesClass = null; state.feeClass = 'all'; state.search = '';
+  }
+  function logout() { setUser(''); closeModal(); render(); showLogin(); }
+  function showLogin() {
+    const el = $('#lock');
+    el.innerHTML = `<div class="lock-box login"><img src="icons/icon-192.png" alt="" class="lock-logo">
+      <h2>${t('who_are_you')}</h2>${db.school.name ? `<p class="lock-sub">${esc(db.school.name)}</p>` : ''}
+      <div class="login-list">${db.staff.map((x) => `<button data-u="${x.id}"><b>👤 ${esc(x.name)}${x.pin ? ' 🔒' : ''}</b>
+        <small>${esc(x.classIds.map((id) => (classById(id) || {}).name).filter(Boolean).join(' · ') || t('no_class_assigned_short'))}</small></button>`).join('')}
+        <button data-u="admin" class="admin"><b>🏫 ${t('admin')}${db.settings.adminPin ? ' 🔒' : ''}</b><small>${t('admin_sub')}</small></button></div>
+      <button class="lock-lang" data-lang>${db.lang === 'ar' ? 'Français' : 'العربية'}</button></div>`;
+    el.hidden = false;
+    el.onclick = (e) => {
+      if (e.target.closest('[data-lang]')) { db.lang = db.lang === 'ar' ? 'fr' : 'ar'; save(); render(); showLogin(); return; }
+      const b = e.target.closest('[data-u]'); if (!b) return;
+      const id = b.dataset.u;
+      const prof = db.staff.find((x) => x.id === id);
+      const hash = id === 'admin' ? db.settings.adminPin : prof && prof.pin;
+      const go = () => { setUser(id); hideLock(); setTab('home'); toast(tf('hello_name', { name: prof ? prof.name : t('admin') })); };
+      if (!hash) { go(); return; }
+      pinPad(prof ? prof.name : t('admin'), async (v) => { if ((await hashPin(v)) === hash) { go(); return true; } return false; }, { switchUser: true });
+    };
+  }
+  function userMenu() {
+    const m = me();
+    openModal(`<h2>👤 ${esc(m ? m.name : t('admin'))}</h2>
+      <p class="muted" style="margin-top:-4px">${m ? `${t('my_classes')} : ${esc(VC().map((c) => c.name).join(', ') || '—')}` : t('admin_sub')}</p>
+      <button class="btn block" id="umSwitch">👥 ${t('switch_user')}</button>
+      ${isAdmin() ? `<button class="btn light block mt" id="umStaff">⚙️ ${t('manage_staff')}</button>` : ''}
+      <button class="btn light block mt" data-close>${t('close')}</button>`, (md) => {
+      $('#umSwitch', md).onclick = () => logout();
+      const ms = $('#umStaff', md); if (ms) ms.onclick = () => { closeModal(); state.plus = 'settings'; setTab('plus', true); setTimeout(() => { const c = $('#staffCard'); if (c) c.scrollIntoView({ behavior: 'smooth' }); }, 100); };
+    });
+  }
+  $('#userBtn').addEventListener('click', userMenu);
+
+  /* ---------- Gestion des surveillants (directeur) ---------- */
+  function staffCardHtml() {
+    const S = db.settings;
+    const assigned = new Set(db.staff.flatMap((x) => x.classIds));
+    const unassigned = db.classes.filter((c) => studentsOf(c.id).length && !assigned.has(c.id));
+    return `<div class="card" id="staffCard">
+      <h2>👥 ${t('staff_title')}</h2>
+      <p class="muted" style="margin-top:0">${t('staff_help')}</p>
+      <label class="switch"><input type="checkbox" id="sMulti" ${S.multi ? 'checked' : ''}> <span>${t('multi_enable')}</span></label>
+      <div id="multiOpts" ${S.multi ? '' : 'hidden'}>
+        <div class="mt">${db.staff.length ? db.staff.map((x) => `<div class="person-row"><div class="grow"><b>👤 ${esc(x.name)}</b>${x.pin ? ' 🔒' : ''}
+          <div class="sub">${esc(x.classIds.map((id) => (classById(id) || {}).name).filter(Boolean).join(' · ') || t('no_class_assigned_short'))}</div></div>
+          <button class="btn light small" data-edit-staff="${x.id}">✏️ ${t('edit')}</button></div>`).join('') : `<p class="empty">${t('staff_none')}</p>`}</div>
+        <button class="btn block mt" id="addStaff">➕ ${t('add_staff')}</button>
+        ${unassigned.length && db.staff.length ? `<div class="hint warn mt">⚠️ ${t('unassigned')} : ${esc(unassigned.map((c) => c.name).join(', '))}</div>` : ''}
+        <h3>🔑 ${t('admin_pin')}</h3>
+        ${S.adminPin ? `<p class="muted" style="margin-top:0">${t('admin_pin_on')}</p>` : `<div class="hint warn">${t('admin_pin_warn')}</div>`}
+        <button class="btn light block" id="sAdminPin">${S.adminPin ? t('pin_change') : t('admin_pin_set')}</button>
+        <div class="steps-box mt"><b>📲 ${t('distribute_title')}</b><ol class="olist">${[1, 2, 3, 4].map((i) => `<li>${t('distribute_' + i)}</li>`).join('')}</ol></div>
+      </div></div>`;
+  }
+  function bindStaffCard(v, collect) {
+    const cb = $('#sMulti', v); if (!cb) return;
+    cb.onchange = () => {
+      collect(); db.settings.multi = cb.checked;
+      if (cb.checked) setUser('admin');
+      save(); render();
+      setTimeout(() => { const c = $('#staffCard'); if (c) c.scrollIntoView(); }, 50);
+    };
+    const as = $('#addStaff', v); if (as) as.onclick = () => { collect(); save(); staffModal(); };
+    $$('[data-edit-staff]', v).forEach((b) => (b.onclick = () => { collect(); save(); staffModal(db.staff.find((x) => x.id === b.dataset.editStaff)); }));
+    const ap = $('#sAdminPin', v); if (ap) ap.onclick = () => { collect(); save(); pinSetup((h) => { db.settings.adminPin = h; }); };
+  }
+  function staffModal(st) {
+    const s = st || { name: '', phone: '', classIds: [], pin: null };
+    const owners = {};
+    db.staff.forEach((x) => { if (x !== st) x.classIds.forEach((id) => { (owners[id] = owners[id] || []).push(x.name.split(' ')[0]); }); });
+    const sel = new Set(s.classIds);
+    openModal(`<h2>👤 ${st ? t('edit') : t('add_staff')}</h2>
+      <label>${t('staff_name')} *</label><input id="sfName" value="${esc(s.name)}" autocomplete="off">
+      <label>${t('phone')}</label><input id="sfPhone" type="tel" inputmode="tel" value="${esc(s.phone || '')}">
+      <label>${t('staff_classes')} *</label>
+      <div class="chips wrap" id="sfCls">${db.classes.map((c) => `<button class="chip ${sel.has(c.id) ? 'on' : ''}" data-c="${c.id}">${esc(c.name)}${owners[c.id] ? ` <small class="owner">· ${esc(owners[c.id].join(', '))}</small>` : ''}</button>`).join('')}</div>
+      <p class="legend">${t('staff_classes_help')}</p>
+      <label>🔒 ${t('staff_pin')}</label>
+      <input id="sfPin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="${s.pin ? t('pin_unchanged') : t('staff_pin_ph')}">
+      ${s.pin ? `<label class="switch mt"><input type="checkbox" id="sfPinOff"> <span>${t('pin_remove')}</span></label>` : ''}
+      <div class="btn-row mt"><button class="btn light" data-close>${t('cancel')}</button><button class="btn" id="sfOk">${t('save')}</button></div>
+      ${st ? `<button class="btn danger block mt" id="sfDel">🗑️ ${t('delete_staff')}</button>` : ''}`, (m) => {
+      $('#sfCls', m).onclick = (e) => {
+        const b = e.target.closest('[data-c]'); if (!b) return;
+        const id = b.dataset.c;
+        if (sel.has(id)) sel.delete(id); else sel.add(id);
+        b.classList.toggle('on', sel.has(id));
+      };
+      $('#sfOk', m).onclick = async () => {
+        const name = $('#sfName', m).value.trim(); if (!name) return toast(t('name_required'));
+        if (!sel.size) return toast(t('staff_need_class'));
+        const pinV = $('#sfPin', m).value.trim();
+        if (pinV && !/^\d{4}$/.test(pinV)) return toast(t('pin_4digits'));
+        let pin = s.pin || null;
+        if (pinV) pin = await hashPin(pinV);
+        if ($('#sfPinOff', m) && $('#sfPinOff', m).checked) pin = null;
+        const data = { name, phone: $('#sfPhone', m).value.trim(), classIds: db.classes.filter((c) => sel.has(c.id)).map((c) => c.id), pin };
+        if (st) Object.assign(st, data); else db.staff.push(Object.assign({ id: uid() }, data));
+        save(); closeModal(); render(); toast(t('saved'));
+      };
+      const d = $('#sfDel', m);
+      if (d) d.onclick = () => confirmBox(tf('delete_staff_confirm', { name: st.name }), t('delete'), () => {
+        db.staff = db.staff.filter((x) => x.id !== st.id);
+        if (currentUser === st.id) setUser(multi() ? '' : 'admin');
+        save(); render(); if (!loggedIn()) showLogin();
+      }, true);
+    });
+  }
+
+  /* ---------- Fusion des sauvegardes (travail des surveillants → directeur) ---------- */
+  function mergeDB(inc) {
+    inc = migrate(inc);
+    const n = { calls: 0, students: 0, incidents: 0, exits: 0, other: 0 };
+    inc.classes.forEach((c) => { if (!classById(c.id)) { db.classes.push(c); n.other++; } });
+    inc.students.forEach((x) => { if (!studentById(x.id)) { db.students.push(x); n.students++; } });
+    const rank = (c) => (c ? (c.status === 'saved' ? 2 : 1) : 0);
+    Object.entries(inc.calls).forEach(([k, c]) => {
+      const l = db.calls[k];
+      const better = !l || rank(c) > rank(l) || (rank(c) === rank(l) && c.status === 'saved' && (c.ts || '') > (l.ts || ''));
+      if (better && Object.keys(c.marks || {}).length) { db.calls[k] = c; n.calls++; }
+      else if (l && c.notified) { l.notified = Object.assign({}, c.notified, l.notified); }
+    });
+    Object.entries(inc.justifs).forEach(([k, j]) => { const l = db.justifs[k]; if (!l || (j.at || '') > (l.at || '')) { db.justifs[k] = j; n.other++; } });
+    const ids = (arr) => new Set(arr.map((x) => x.id));
+    const iSet = ids(db.incidents); inc.incidents.forEach((x) => { if (!iSet.has(x.id)) { db.incidents.push(x); n.incidents++; } });
+    const eSet = ids(db.exits); inc.exits.forEach((x) => { if (!eSet.has(x.id)) { db.exits.push(x); n.exits++; } });
+    Object.entries(inc.payments).forEach(([k, p]) => { if (!db.payments[k]) { db.payments[k] = p; n.other++; } });
+    if (!db.staff.length && inc.staff.length) { db.staff = inc.staff; db.settings.multi = inc.settings.multi; db.settings.adminPin = inc.settings.adminPin; }
+    sortClasses();
+    return n;
+  }
+
   function lockApp() {
+    if (multi()) {
+      if (!loggedIn()) { showLogin(); return; }
+      const m = me(); const hash = m ? m.pin : db.settings.adminPin;
+      if (!hash) return;
+      pinPad(tf('hello_name', { name: m ? m.name : t('admin') }), async (v) => { if ((await hashPin(v)) === hash) { hideLock(); return true; } return false; }, { switchUser: true });
+      return;
+    }
     if (!db.settings.pin) return;
     pinPad(t('pin_enter'), async (v) => {
       if ((await hashPin(v)) === db.settings.pin) { $('#lock').hidden = true; $('#lock').innerHTML = ''; return true; }
       return false;
     });
   }
-  function pinSetup() {
+  function pinSetup(apply) {
     pinPad(t('pin_new'), async (first) => {
       setTimeout(() => pinPad(t('pin_confirm'), async (second) => {
-        if (second !== first) { toast(t('pin_mismatch')); $('#lock').hidden = true; return true; }
-        db.settings.pin = await hashPin(first); save();
+        if (second !== first) { toast(t('pin_mismatch')); hideLock(); return true; }
+        apply(await hashPin(first)); save();
         $('#lock').hidden = true; $('#lock').innerHTML = ''; render(); toast('🔒 ' + t('pin_saved'));
         return true;
-      }), 150);
+      }, { cancel: true }), 150);
       return true;
-    });
+    }, { cancel: true });
   }
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) hiddenAt = Date.now();
-    else if (db.settings.pin && hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) lockApp();
+    else if ((db.settings.pin || multi()) && hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) lockApp();
   });
 
   /* ---------------- Installation (PWA) ---------------- */
@@ -1708,5 +1913,5 @@
   /* ---------------- Démarrage ---------------- */
   save();
   render();
-  if (db.settings.pin) lockApp();
+  lockApp();
 })();
