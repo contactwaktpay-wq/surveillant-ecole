@@ -8,7 +8,9 @@
 
   const I18N = window.I18N;
   const KEY = 'surveillant_data_v1';
-  const VERSION = '2.3';
+  const VERSION = '2.4';
+  const AUTHOR = 'Ibrahima Dia';
+  const AUTHOR_PHONES = ['+222 32 42 43 71', '+222 49 03 76 62'];
 
   /* ---------------- Utilitaires de base ---------------- */
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1014,7 +1016,7 @@
     ].filter(Boolean);
     v.innerHTML = `<div class="card menu">${items.map(([id, ic, ti, su]) => `<button class="menu-item" data-p="${id}"><span class="mi-ico">${ic}</span><span class="grow"><b>${ti}</b><small>${esc(su)}</small></span><span class="muted chev">›</span></button>`).join('')}</div>
       ${!db.settings.fees && isAdmin() ? `<p class="legend center">${t('fees_off_hint')}</p>` : ''}
-      <p class="center muted small">${t('app')} · ${t('version')} ${VERSION}</p>`;
+      <p class="center muted small made-by">${t('app')} · ${t('version')} ${VERSION}<br>${t('made_by')} <b>${esc(t('author_name'))}</b></p>`;
     $$('[data-p]', v).forEach((b) => (b.onclick = () => { if (b.dataset.p === 'switch') { logout(); return; } state.plus = b.dataset.p; render(); window.scrollTo(0, 0); }));
   }
 
@@ -1441,9 +1443,15 @@
       <div class="card"><h2>${t('install_title')}</h2>
         ${deferredPrompt ? `<button class="btn gold block" id="hInstall">📲 ${t('install')}</button>` : ''}
         <p>${isIOS ? t('install_ios') : t('install_android')}</p><p class="muted">${isIOS ? t('install_android') : t('install_ios')}</p></div>
+      <div class="card about-card"><h2>ℹ️ ${t('about')}</h2>
+        <p style="margin-top:0">${t('about_text')}<br><b class="author">${esc(t('author_name'))}</b></p>
+        ${AUTHOR_PHONES.map((ph) => `<div class="contact-row"><span class="num">📱 ${esc(ph)}</span>
+          <a class="btn small wa-btn" href="${waLink(ph, t('contact_msg'))}" target="_blank" rel="noopener">💬 WhatsApp</a>
+          <a class="btn small light" href="tel:${cleanPhone(ph)}">📞</a></div>`).join('')}
+      </div>
       <div class="card"><h2>🧹 ${t('cache_title')}</h2><p style="margin-top:0">${t('cache_tip')}</p></div>
       <div class="card"><h2>${t('howto')}</h2><ol class="olist">${[1, 2, 3, 4, 5, 6].map((i) => `<li>${t('howto_' + i)}</li>`).join('')}</ol></div>
-      <p class="center muted small">${t('app')} · ${t('version')} ${VERSION}</p>`;
+      <p class="center muted small made-by">${t('app')} · ${t('version')} ${VERSION}<br>${t('made_by')} <b>${esc(t('author_name'))}</b></p>`;
     const hi = $('#hInstall', v); if (hi) hi.onclick = () => $('#installBtn').click();
   }
 
@@ -2316,6 +2324,18 @@
   setInterval(() => { if (cloud && !document.hidden) syncNow(); }, 90 * 1000);
   // Demande au navigateur de protéger les données (évite l'effacement automatique)
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then((p) => { if (!p) navigator.storage.persist(); }); } catch (e) { /* ignore */ }
+
+  /* ---------------- Écran d'ouverture ---------------- */
+  (function splash() {
+    const sp = $('#splash'); if (!sp) return;
+    $('#splashTitle').textContent = t('app');
+    $('#splashSub').textContent = db.school.name || t('app_sub');
+    $('#splashBy').innerHTML = `${esc(t('made_by'))} <b>${esc(t('author_name'))}</b>`;
+    sp.dir = db.lang === 'ar' ? 'rtl' : 'ltr';
+    const hide = () => { sp.classList.add('hide'); setTimeout(() => sp.remove(), 600); };
+    const tm = setTimeout(hide, 1600);
+    sp.addEventListener('click', () => { clearTimeout(tm); hide(); });
+  })();
 
   /* ---------------- Démarrage ---------------- */
   save();

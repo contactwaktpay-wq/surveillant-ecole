@@ -350,6 +350,24 @@ textarea { min-height: 80px; resize: vertical; }
 .qr-box { display: flex; justify-content: center; margin: 14px 0 4px; }
 .qr-box svg { width: 200px; height: 200px; background: #fff; border-radius: 12px; border: 1px solid var(--border); }
 
+/* v2.4 écran d'ouverture */
+.splash { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; color: #fff; text-align: center;
+  background: linear-gradient(160deg, var(--green) 0%, var(--green-dark) 100%); transition: opacity .45s ease, visibility .45s; }
+.splash.hide { opacity: 0; visibility: hidden; }
+.splash-in { animation: splashIn .7s ease both; padding: 24px; }
+.splash-logo { width: 104px; height: 104px; border-radius: 26px; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.splash h1 { font-size: 32px; margin: 18px 0 4px; letter-spacing: .5px; }
+.splash-sub { margin: 0; opacity: .85; font-size: 15px; }
+.splash-line { width: 56px; height: 4px; border-radius: 4px; background: var(--gold); margin: 22px auto 16px; }
+.splash-by { margin: 0; font-size: 15px; opacity: .95; animation: splashIn .7s .35s ease both; }
+.splash-by b { font-size: 18px; color: var(--gold); display: block; margin-top: 4px; letter-spacing: .4px; }
+@keyframes splashIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+@media print { .splash { display: none !important; } }
+.about-card .contact-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.about-card .contact-row .num { flex: 1; white-space: nowrap; font-size: 15px; font-weight: 700; direction: ltr; text-align: start; }
+.about-card .author { font-size: 18px; color: var(--green-dark); }
+.made-by b { color: var(--green-dark); }
+
 /* impression */
 .print-area { display: none; }
 @media print {

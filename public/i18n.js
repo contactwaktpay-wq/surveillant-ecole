@@ -193,6 +193,10 @@ window.I18N = {
     cloud_err_nolink: "Aucune donnée trouvée pour ce lien. Vérifiez qu'il s'agit du bon lien.",
     cloud_new_school_hint: "Nouvelle école ? Ajoutez d'abord vos élèves, ou activez directement :",
     wb_cloud_help: "Le plus simple : touchez le lien de récupération reçu sur WhatsApp.",
+    // v2.4 auteur
+    made_by: 'Conçue par', author_name: 'Ibrahima Dia', about: 'À propos',
+    about_text: 'Application conçue et développée par',
+    contact_msg: "Bonjour M. Dia, je souhaite des informations sur l'application Surveillant.",
     default_classes: ['1ère AF', '2ème AF', '3ème AF', '4ème AF', '5ème AF', '6ème AF']
   },
 
@@ -383,6 +387,10 @@ window.I18N = {
     cloud_err_nolink: 'لا توجد بيانات لهذا الرابط. تحقق من أنه الرابط الصحيح.',
     cloud_new_school_hint: 'مدرسة جديدة؟ أضف التلاميذ أولاً، أو فعّل مباشرة:',
     wb_cloud_help: 'الأسهل: اضغط على رابط الاسترجاع المستلم في واتساب.',
+    // v2.4
+    made_by: 'من تصميم', author_name: 'إبراهيما ديا', about: 'حول التطبيق',
+    about_text: 'تطبيق من تصميم وتطوير',
+    contact_msg: 'السلام عليكم السيد ديا، أرغب في معلومات حول تطبيق المراقب.',
     default_classes: ['السنة الأولى', 'السنة الثانية', 'السنة الثالثة', 'السنة الرابعة', 'السنة الخامسة', 'السنة السادسة']
   }
 };

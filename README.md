@@ -24,6 +24,9 @@ Toutes les données restent sur le téléphone du surveillant.
   nouveau téléphone : toucher le lien de récupération. Stockage : Netlify Functions + Netlify Blobs (`netlify/functions/sync.mjs`).
 - 🔒 **Code PIN**, 💾 sauvegarde partageable (WhatsApp) et restauration, nouvelle année scolaire.
 
+## Auteur
+Application conçue et développée par **Ibrahima Dia** – WhatsApp : +222 32 42 43 71 / +222 49 03 76 62.
+
 ## Déploiement
 Site statique sans compilation dans `public/`. Netlify : dossier publié `public`, fonction `netlify/functions/sync.mjs` (dépendance `@netlify/blobs`, installée automatiquement par Netlify grâce à `package.json`). Voir `netlify.toml`.
 Test local : `netlify dev`.
